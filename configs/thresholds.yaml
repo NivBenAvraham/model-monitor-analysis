@@ -1,7 +1,54 @@
-# Model health thresholds.
-# Populated as metrics are defined — one section per metric group.
-# Values here are the single source of truth — never hardcode in Python.
+# Model health thresholds — single source of truth.
+# Never hardcode these values in Python.
+# Sourced from: beehero-model-monitoring / model_metric_test/utils/constants.py
 
-metrics: {}
+metrics:
 
-decision: {}
+  mode_collapse:
+    # A group collapses if predictions are too concentrated in one histogram bin.
+    high_pct_threshold: 0.375         # primary: bin holds ≥37.5% of predictions → collapse
+    min_high_pct_threshold: 0.25      # secondary: bin ≥25% AND ≥2× second-highest bin → collapse
+    max_bee_frames: 20                # histogram bins span [0, 20]
+
+  avg_overtime:
+    # Rolling metric (MAE-style) must stay below threshold to pass.
+    # Checked over 3-day, 4-day, and 5-day windows.
+    threshold: 0.84                   # pass when metric < 0.84
+    windows_days: [3, 4, 5]
+
+  yard_inspections:
+    # CV ratio = cv_inspection / cv_prediction; must be inside [lower, upper] to pass.
+    cv_lower_threshold: 0.5
+    cv_upper_threshold: 2.0
+    avg_tolerance: 1                  # |avg_insp - avg_pred| ≤ 1 is considered a match
+
+  ops_inspections:
+    # Same CV-ratio logic as yard_inspections applied to ops inspection data.
+    cv_lower_threshold: 0.5           # inherited from yard_inspections constants
+    cv_upper_threshold: 2.0
+    avg_tolerance: 1
+
+  hive_health:
+    strong_hive_threshold: 10         # a hive is "strong" if bee_frames ≥ 10
+    min_strong_hives: 10              # group needs ≥ 10 strong hives
+    metric_ratio: 0.2                 # strong hives / total samples must be ≥ 0.2
+    low_ratio_threshold: 0.1          # health/beeframes sensor ratio — below this flags the group
+
+  post_validation:
+    # No numeric thresholds — logic is tier1_status / tier2_status string gating.
+    # valid_status: "valid"
+    # See: src/model_monitor/metrics/post_validation.py
+
+  temp_metric:
+    # EXPERIMENTAL — thresholds to be defined during exploration.
+    # Candidate: differential between pcb_temperature_one (hive) and pcb_temperature_two (ambient).
+    # Candidate: z-score threshold for outlier flagging (already 3 in source ETL).
+    zscore_threshold: 3               # inherited from temperature_data_export_package preprocessing
+    temp_range_min: -30               # valid hive sensor range (pcb_temperature_one)
+    temp_range_max: 100
+    ambient_temp_range_min: -30       # valid ambient/gateway range (pcb_temperature_two)
+    ambient_temp_range_max: 100
+
+decision:
+  # Populated once decision rules are defined.
+  # Will map metric results → ModelHealth: VALID / NEEDS_CALIBRATION / INVALID
