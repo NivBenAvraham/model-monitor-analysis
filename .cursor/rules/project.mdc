@@ -1,0 +1,24 @@
+---
+description: model-monitor-analysis — repo conventions for Cursor
+alwaysApply: true
+---
+
+# Repo Conventions
+
+## Structure
+- `src/model_monitor/ingestion/` — data loading only
+- `src/model_monitor/metrics/` — metric computation only
+- `src/model_monitor/decision/` — model health logic only
+- `src/model_monitor/reporting/` — output and reporting only
+- `src/model_monitor/utils/` — shared helpers
+- `notebooks/exploration/` — exploration only, never imported by src/
+- `configs/thresholds.yaml` — all threshold values live here, never hardcoded
+
+## Rules
+- Keep the four layers strictly separate: ingestion → metrics → decision → reporting
+- `decision/` must use deterministic logic only — no LLM calls, ever
+- `ModelHealth` outcomes are exactly: `VALID`, `NEEDS_CALIBRATION`, `INVALID`
+- Thresholds go in `configs/thresholds.yaml`, never hardcoded in Python
+- Notebooks are exploration only — no production logic in notebooks
+- Write a stub test for every new module added under `src/`
+- Do not add abstractions, base classes, or frameworks without being explicitly asked

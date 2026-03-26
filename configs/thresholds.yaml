@@ -1,0 +1,7 @@
+# Model health thresholds.
+# Populated as metrics are defined — one section per metric group.
+# Values here are the single source of truth — never hardcode in Python.
+
+metrics: {}
+
+decision: {}
