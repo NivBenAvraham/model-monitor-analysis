@@ -27,7 +27,7 @@ import pandas as pd
 from pyathena import connect
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from model_monitor.ingestion import raw_bee_frames_table
+from model_monitor.ingestion import raw_bee_frames_table, hive_updates_query
 
 # ---------------------------------------------------------------------------
 # Fill in these values before running
@@ -92,15 +92,25 @@ def save(df: pd.DataFrame, name: str) -> None:
 
 def pull_temperature() -> None:
     """
-    Use load_temperature_data() from the temperature package.
-    This applies all preprocessing: outlier removal, negative-temp fix, 30-min resample.
+    Extract temperature data for GROUP_IDS / DATE / MODELS.
+
+    hive_updates: uses our local hive_updates_query() so the correct raw table
+    is selected based on date (supervised_beeframes vs unified_bee_frames).
+
+    sensor_samples + gateway_samples: delegated to the package's loaders so all
+    preprocessing (outlier removal, negative-temp fix, 30-min resample) is applied.
+
     Produces: hive_updates.csv, sensor_temperature.csv, gateway_temperature.csv
     """
     if str(TEMP_PACKAGE_PATH) not in sys.path:
         sys.path.insert(0, str(TEMP_PACKAGE_PATH))
 
     try:
-        from temperature_data_export_package.data_extraction import load_temperature_data
+        from temperature_data_export_package.data_extraction import (
+            load_sensor_samples,
+            load_gateway_samples,
+        )
+        from temperature_data_export_package.utils.data_bins import add_hive_size_bucket
     except ImportError as e:
         log.error(f"Cannot import temperature_data_export_package: {e}")
         log.error(f"Check TEMP_PACKAGE_PATH = {TEMP_PACKAGE_PATH}")
@@ -111,21 +121,28 @@ def pull_temperature() -> None:
     def read_curated(sql: str) -> pd.DataFrame:
         return pd.read_sql(sql, curated_conn)
 
-    log.info(f"Pulling temperature data: group_ids={GROUP_IDS}, date={DATE}, models={MODELS}")
     date_obj = datetime.strptime(DATE, "%Y-%m-%d").date()
+    group_ids_tuple = tuple(GROUP_IDS) if len(GROUP_IDS) >= 2 else tuple(GROUP_IDS) * 2
+    models_tuple    = tuple(MODELS)    if len(MODELS) >= 2    else tuple(MODELS) * 2
 
-    hive_updates, sensor_samples, gateway_samples = load_temperature_data(
-        read_curated=read_curated,
-        read_raw=None,
-        group_ids=GROUP_IDS,
-        date=date_obj,
-        models=MODELS,
-        add_hive_size_buckets=True,
-    )
+    table = raw_bee_frames_table(DATE)
+    log.info(f"Pulling hive_updates: group_ids={GROUP_IDS}, date={DATE}, table=data_lake_raw_data.{table}")
+    hive_updates = read_curated(hive_updates_query(group_ids_tuple, models_tuple, DATE))
 
-    save(hive_updates,     "hive_updates")
-    save(sensor_samples,   "sensor_temperature")
-    save(gateway_samples,  "gateway_temperature")
+    log.info("Pulling sensor_temperature (preprocessed, 30-min resampled) ...")
+    sensor_samples = load_sensor_samples(read_curated, hive_updates, DATE)
+
+    if not hive_updates.empty and not sensor_samples.empty:
+        sensor_samples = add_hive_size_bucket(sensor_samples, hive_updates)
+        sensor_group = hive_updates[["sensor_mac_address", "group_id"]].drop_duplicates("sensor_mac_address", keep="last")
+        sensor_samples = sensor_samples.merge(sensor_group, on="sensor_mac_address", how="left")
+
+    log.info("Pulling gateway_temperature (ambient) ...")
+    gateway_samples = load_gateway_samples(read_curated, sensor_samples, DATE)
+
+    save(hive_updates,    "hive_updates")
+    save(sensor_samples,  "sensor_temperature")
+    save(gateway_samples, "gateway_temperature")
 
 
 # ---------------------------------------------------------------------------
