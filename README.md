@@ -41,3 +41,21 @@ pip install -e ".[dev]"
 ```bash
 pytest
 ```
+
+## Pull Local Data Samples
+
+Samples are saved to `data/samples/` (gitignored — never committed).
+
+```bash
+# Default: last 7 days, 1000 rows per table
+python scripts/pull_samples.py
+
+# Custom range
+python scripts/pull_samples.py --days 14 --limit 5000
+```
+
+Before running, set your Athena config in `scripts/pull_samples.py`:
+- `S3_STAGING_DIR`
+- `REGION`
+- `CURATED_DATABASE` / `RAW_DATABASE`
+- `WORKGROUP`

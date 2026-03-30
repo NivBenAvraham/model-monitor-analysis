@@ -47,10 +47,13 @@ htmlcov/
 *.swp
 *.swo
 
-# Data — never commit raw data
+# Data — never commit raw or sample data
 data/
 *.csv
 *.parquet
-*.json
 *.db
 *.sqlite
+
+# JSON (exclude notebooks/configs but not data)
+# Note: .json files in src/ or configs/ are fine — only data JSONs are a risk
+# Uncomment if needed: *.json

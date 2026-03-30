@@ -4,15 +4,16 @@ alwaysApply: true
 ---
 
 # Data Definitions
-
+In BeeHero world we have two types of groups that both called 'group_id' : Beekeeper and Grower.
+in this repo we speak about Beekeeper only.
+we usually speak on group_id term.
 ## Entity Hierarchy
 
 ```
-beekeeper_id
-  └── yard_id          (a yard belongs to a beekeeper)
-        └── group_id   (a group of hives in a yard)
-              └── sensor_mac_address  (one sensor per hive)
-                    └── gateway_mac_address  (sensors report via a gateway)
+beekeeper_id == group_id  (beekeeper unique definder)
+  └── yard_id   (a yard belongs to a beekeeper/group_id)
+        └── sensor_mac_address  (one sensor per hive)
+                    └── gateway_mac_address  (sensors report via a gateway)         
 ```
 
 ---
@@ -29,7 +30,7 @@ Daily preprocessed model predictions per sensor.
 | `mac` | string | Sensor MAC address (same as `sensor_mac_address` in other tables) |
 | `date` | date | The date of the prediction run |
 | `run_date` | date | Alias / processing date (use with `run_timestamp` for dedup) |
-| `run_timestamp` | timestamp | When the model run was executed |
+| `run_timestamp` | timestamp | When the model run was executed in aws |
 | `model_name` | string | Name of the model (e.g. `'supervised_beeframes'`) |
 | `pred_raw` | float | Raw model prediction of bee_frames count for that sensor |
 | `group_id` | string | Hive group the sensor belongs to |

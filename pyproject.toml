@@ -13,6 +13,7 @@ dependencies = [
     "boto3",
     "psycopg2-binary",
     "sqlalchemy",
+    "pyathena[pandas]",
 ]
 
 [project.optional-dependencies]
