@@ -1,19 +1,20 @@
 """
-Pull local development samples from Athena.
+Pull local development samples from Athena and save to data/samples/ (gitignored).
 
-Saves CSV files to data/samples/ (gitignored — never committed).
-Run this once to get data for offline notebook work and local development.
+For temperature data, uses load_temperature_data() from temperature_data_export_package
+so all preprocessing (outlier removal, 30-min resample, negative-temp fix) is applied.
+
+For model monitoring data, queries Athena directly.
 
 Usage:
     python scripts/pull_samples.py
-    python scripts/pull_samples.py --days 14 --limit 2000
 
 Requirements:
     pip install -e ".[dev]"
     AWS credentials configured (aws configure or environment variables)
 """
 
-import argparse
+import sys
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -22,15 +23,32 @@ import pandas as pd
 from pyathena import connect
 
 # ---------------------------------------------------------------------------
-# Configuration — fill in your values
+# Fill in these values before running
 # ---------------------------------------------------------------------------
 
-S3_STAGING_DIR = "s3://YOUR_BUCKET/athena-results/"  # TODO: set your Athena S3 staging bucket
-REGION = "us-east-1"                                  # TODO: set your AWS region
-CURATED_DATABASE = "data_lake_curated_data"           # TODO: confirm curated DB name
-RAW_DATABASE = "data_lake_raw_data"                   # TODO: confirm raw DB name
-WORKGROUP = "primary"                                 # TODO: set your Athena workgroup if not default
+S3_STAGING_DIR = "s3://YOUR_BUCKET/athena-results/"        # Athena S3 staging bucket
+REGION         = "us-east-1"                               # AWS region
+WORKGROUP      = "primary"                                 # Athena workgroup
 
+# Temperature data inputs
+GROUP_IDS = [36]                                           # list of group_id integers to sample
+DATE      = "2026-02-15"                                   # YYYY-MM-DD — date to pull temp data for
+MODELS    = ["beeframes_supervised_snapshot_24_v6_1_1_OS"] # model name(s) to filter by
+
+# Monitoring tables: date range
+DAYS_BACK = 7        # how many days back from today
+LIMIT     = 1000     # max rows per monitoring table
+
+# Database names (match your Athena Glue catalog)
+CURATED_DATABASE = "data_lake_curated_data"
+RAW_DATABASE     = "data_lake_raw_data"
+
+# Path to the temperature package (adjust if your clone is elsewhere)
+TEMP_PACKAGE_PATH = Path(
+    "/Users/nivbenavraham/Desktop/Codebase/Clones/beehero-streamlit-app"
+)
+
+# Output directory (gitignored)
 OUTPUT_DIR = Path("data/samples")
 
 # ---------------------------------------------------------------------------
@@ -48,10 +66,9 @@ def get_connection(database: str):
     )
 
 
-def pull(name: str, sql: str, database: str) -> pd.DataFrame:
+def pull_sql(name: str, sql: str, database: str) -> pd.DataFrame:
     log.info(f"Pulling {name} ...")
-    conn = get_connection(database)
-    df = pd.read_sql(sql, conn)
+    df = pd.read_sql(sql, get_connection(database))
     log.info(f"  → {len(df)} rows")
     return df
 
@@ -59,24 +76,63 @@ def pull(name: str, sql: str, database: str) -> pd.DataFrame:
 def save(df: pd.DataFrame, name: str) -> None:
     path = OUTPUT_DIR / f"{name}.csv"
     df.to_csv(path, index=False)
-    log.info(f"  Saved to {path}")
+    log.info(f"  Saved → {path}  ({path.stat().st_size // 1024} KB)")
 
 
-def pull_all(days: int, limit: int) -> None:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# ---------------------------------------------------------------------------
+# Temperature data — via temperature_data_export_package
+# ---------------------------------------------------------------------------
 
-    start_date = (datetime.today() - timedelta(days=days)).strftime("%Y-%m-%d")
-    end_date = datetime.today().strftime("%Y-%m-%d")
-    log.info(f"Date range: {start_date} → {end_date}  |  row limit per table: {limit}")
+def pull_temperature() -> None:
+    """
+    Use load_temperature_data() from the temperature package.
+    This applies all preprocessing: outlier removal, negative-temp fix, 30-min resample.
+    Produces: hive_updates.csv, sensor_temperature.csv, gateway_temperature.csv
+    """
+    if str(TEMP_PACKAGE_PATH) not in sys.path:
+        sys.path.insert(0, str(TEMP_PACKAGE_PATH))
 
-    # ------------------------------------------------------------------
-    # 1. Preprocess (latest run per sensor per date)
-    # ------------------------------------------------------------------
-    df = pull(
-        "preprocess",
-        f"""
-        SELECT *
-        FROM (
+    try:
+        from temperature_data_export_package.data_extraction import load_temperature_data
+    except ImportError as e:
+        log.error(f"Cannot import temperature_data_export_package: {e}")
+        log.error(f"Check TEMP_PACKAGE_PATH = {TEMP_PACKAGE_PATH}")
+        return
+
+    curated_conn = get_connection(CURATED_DATABASE)
+
+    def read_curated(sql: str) -> pd.DataFrame:
+        return pd.read_sql(sql, curated_conn)
+
+    log.info(f"Pulling temperature data: group_ids={GROUP_IDS}, date={DATE}, models={MODELS}")
+    date_obj = datetime.strptime(DATE, "%Y-%m-%d").date()
+
+    hive_updates, sensor_samples, gateway_samples = load_temperature_data(
+        read_curated=read_curated,
+        read_raw=None,
+        group_ids=GROUP_IDS,
+        date=date_obj,
+        models=MODELS,
+        add_hive_size_buckets=True,
+    )
+
+    save(hive_updates,     "hive_updates")
+    save(sensor_samples,   "sensor_temperature")
+    save(gateway_samples,  "gateway_temperature")
+
+
+# ---------------------------------------------------------------------------
+# Model monitoring tables — direct Athena queries
+# ---------------------------------------------------------------------------
+
+def pull_monitoring() -> None:
+    start_date = (datetime.today() - timedelta(days=DAYS_BACK)).strftime("%Y-%m-%d")
+    end_date   = datetime.today().strftime("%Y-%m-%d")
+    log.info(f"Pulling monitoring tables: {start_date} → {end_date}  limit={LIMIT}")
+
+    # 1. Preprocess (latest run per sensor per date — always dedup with row_number)
+    save(pull_sql("preprocess", f"""
+        SELECT * FROM (
             SELECT *,
                 row_number() OVER (
                     PARTITION BY mac, date, model_name
@@ -84,135 +140,50 @@ def pull_all(days: int, limit: int) -> None:
                 ) AS rn
             FROM beekeeper_beeframe_model_monitoring_preprocess
             WHERE date BETWEEN date('{start_date}') AND date('{end_date}')
-        )
-        WHERE rn = 1
-        LIMIT {limit}
-        """,
-        CURATED_DATABASE,
-    )
-    save(df, "preprocess")
+        ) WHERE rn = 1
+        LIMIT {LIMIT}
+    """, CURATED_DATABASE), "preprocess")
 
-    # ------------------------------------------------------------------
-    # 2. Validations
-    # ------------------------------------------------------------------
-    df = pull(
-        "validations",
-        f"""
+    # 2. Validations (tier1 / tier2 human decisions)
+    save(pull_sql("validations", f"""
         SELECT timestamp, group_id, tier1_status, tier2_status
         FROM beekeeper_beeframe_model_monitoring_validations
         WHERE timestamp BETWEEN timestamp '{start_date}' AND timestamp '{end_date}'
-        LIMIT {limit}
-        """,
-        CURATED_DATABASE,
-    )
-    save(df, "validations")
+        LIMIT {LIMIT}
+    """, CURATED_DATABASE), "validations")
 
-    # ------------------------------------------------------------------
     # 3. Ops inspections
-    # ------------------------------------------------------------------
-    df = pull(
-        "ops_inspections",
-        f"""
+    save(pull_sql("ops_inspections", f"""
         SELECT *
         FROM ops_inspections
         WHERE date(utc_timestamp) BETWEEN date('{start_date}') AND date('{end_date}')
-        LIMIT {limit}
-        """,
-        CURATED_DATABASE,
-    )
-    save(df, "ops_inspections")
+        LIMIT {LIMIT}
+    """, CURATED_DATABASE), "ops_inspections")
 
-    # ------------------------------------------------------------------
-    # 4. Yard inspections
-    # ------------------------------------------------------------------
-    df = pull(
-        "yard_inspections",
-        f"""
+    # 4. Yard inspections (bee_frames_distribution is a JSON string — parse with ast.literal_eval)
+    save(pull_sql("yard_inspections", f"""
         SELECT *
         FROM yard_inspections
         WHERE date(utc_end_time) BETWEEN date('{start_date}') AND date('{end_date}')
-        LIMIT {limit}
-        """,
-        CURATED_DATABASE,
-    )
-    save(df, "yard_inspections")
+        LIMIT {LIMIT}
+    """, CURATED_DATABASE), "yard_inspections")
 
-    # ------------------------------------------------------------------
     # 5. Daily hive health
-    # ------------------------------------------------------------------
-    df = pull(
-        "daily_hive_health",
-        f"""
+    save(pull_sql("daily_hive_health", f"""
         SELECT run_date, sensor_mac_address, group_id, yard_id, is_healthy
         FROM daily_hive_health_monitoring
         WHERE is_healthy IS NOT NULL
           AND run_date BETWEEN date('{start_date}') AND date('{end_date}')
-        LIMIT {limit}
-        """,
-        CURATED_DATABASE,
-    )
-    save(df, "daily_hive_health")
-
-    # ------------------------------------------------------------------
-    # 6. Sensor temperature samples
-    # ------------------------------------------------------------------
-    df = pull(
-        "sensor_temperature",
-        f"""
-        SELECT sensor_mac_address, timestamp, pcb_temperature_one,
-               gateway_mac_address, humidity
-        FROM sensor_samples_curated
-        WHERE date(timestamp) BETWEEN date('{start_date}') AND date('{end_date}')
-          AND pcb_temperature_one BETWEEN -30 AND 100
-        LIMIT {limit}
-        """,
-        CURATED_DATABASE,
-    )
-    save(df, "sensor_temperature")
-
-    # ------------------------------------------------------------------
-    # 7. Gateway (ambient) temperature samples
-    # ------------------------------------------------------------------
-    df = pull(
-        "gateway_temperature",
-        f"""
-        SELECT gateway_mac_address, timestamp, pcb_temperature_two
-        FROM gateway_samples_curated
-        WHERE date(timestamp) BETWEEN date('{start_date}') AND date('{end_date}')
-          AND pcb_temperature_two IS NOT NULL
-        LIMIT {limit}
-        """,
-        CURATED_DATABASE,
-    )
-    save(df, "gateway_temperature")
-
-    # ------------------------------------------------------------------
-    # 8. Hive updates (bee_frames ground truth)
-    # ------------------------------------------------------------------
-    df = pull(
-        "hive_updates",
-        f"""
-        SELECT sensor_mac_address, created, group_id, bee_frames, model
-        FROM supervised_beeframes
-        WHERE date(log_timestamp) BETWEEN date('{start_date}') AND date('{end_date}')
-        LIMIT {limit}
-        """,
-        RAW_DATABASE,
-    )
-    save(df, "hive_updates")
-
-    log.info("Done. Files saved to data/samples/")
-    log.info("Expected files:")
-    for f in sorted(OUTPUT_DIR.glob("*.csv")):
-        log.info(f"  {f.name}  ({f.stat().st_size // 1024} KB)")
+        LIMIT {LIMIT}
+    """, CURATED_DATABASE), "daily_hive_health")
 
 
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Pull Athena samples to data/samples/")
-    parser.add_argument("--days", type=int, default=7, help="How many days back to pull (default: 7)")
-    parser.add_argument("--limit", type=int, default=1000, help="Max rows per table (default: 1000)")
-    args = parser.parse_args()
-
-    pull_all(days=args.days, limit=args.limit)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    pull_temperature()
+    pull_monitoring()
+    log.info("Done. Files in data/samples/:")
+    for f in sorted(OUTPUT_DIR.glob("*.csv")):
+        log.info(f"  {f.name}")
