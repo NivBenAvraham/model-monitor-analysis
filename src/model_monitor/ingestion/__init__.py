@@ -38,5 +38,34 @@ Data ingestion — load raw data from SQL / AWS sources.
      gateway_samples: gateway_mac_address, timestamp, pcb_temperature_two
      hive_updates:    sensor_mac_address, created, group_id, bee_frames, model
 
+--- Table Source Switch (IMPORTANT) ---
+
+Both tables live in data_lake_raw_data. Use raw_bee_frames_table() — never hardcode either name.
+
+    date <= 2026-03-09  →  supervised_beeframes
+    date >= 2026-03-10  →  unified_bee_frames   (fully replaces supervised_beeframes)
+
 --- Ingestion functions are added here as data pipelines are implemented. ---
 """
+
+from datetime import date as _date
+
+_SWITCH_DATE = _date(2026, 3, 10)
+_TABLE_LEGACY = "supervised_beeframes"
+_TABLE_CURRENT = "unified_bee_frames"
+
+
+def raw_bee_frames_table(query_date) -> str:
+    """
+    Return the correct raw bee_frames table name for a given date.
+
+    Args:
+        query_date: date object, or a string 'YYYY-MM-DD'
+
+    Returns:
+        'supervised_beeframes'  for dates up to 2026-03-09
+        'unified_bee_frames'    for dates from 2026-03-10 onward
+    """
+    if isinstance(query_date, str):
+        query_date = _date.fromisoformat(query_date[:10])
+    return _TABLE_CURRENT if query_date >= _SWITCH_DATE else _TABLE_LEGACY

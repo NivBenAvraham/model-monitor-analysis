@@ -26,6 +26,9 @@ from pathlib import Path
 import pandas as pd
 from pyathena import connect
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from model_monitor.ingestion import raw_bee_frames_table
+
 # ---------------------------------------------------------------------------
 # Fill in these values before running
 # ---------------------------------------------------------------------------
@@ -180,6 +183,22 @@ def pull_monitoring() -> None:
           AND run_date BETWEEN date('{start_date}') AND date('{end_date}')
         LIMIT {LIMIT}
     """, CURATED_DATABASE), "daily_hive_health")
+
+    # 6. Raw bee_frames model run logs — table depends on date (see raw_bee_frames_table rule)
+    #    Rows spanning the switch date (2026-03-10) are pulled from both tables and combined.
+    tables = {start_date: raw_bee_frames_table(start_date), end_date: raw_bee_frames_table(end_date)}
+    unique_tables = set(tables.values())
+    parts = []
+    for table in unique_tables:
+        log.info(f"  raw bee_frames table: {RAW_DATABASE}.{table}")
+        parts.append(pull_sql(f"raw_bee_frames ({table})", f"""
+            SELECT *
+            FROM {table}
+            WHERE date(log_timestamp) BETWEEN date('{start_date}') AND date('{end_date}')
+            LIMIT {LIMIT}
+        """, RAW_DATABASE))
+    raw_bf = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+    save(raw_bf, "raw_bee_frames")
 
 
 # ---------------------------------------------------------------------------

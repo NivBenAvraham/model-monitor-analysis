@@ -171,6 +171,19 @@ Derived from `bee_frames` count:
 - Outlier removal: z-score threshold 3, applied per sensor
 - Resampled to 30-minute means before use
 
+### Table Source Switch — `supervised_beeframes` vs `unified_bee_frames` (IMPORTANT)
+
+Both tables live in `data_lake_raw_data`. Which one to use depends on the query date:
+
+| Date range | Table to use |
+|---|---|
+| date ≤ 2026-03-09 | `data_lake_raw_data.supervised_beeframes` |
+| date ≥ 2026-03-10 | `data_lake_raw_data.unified_bee_frames` |
+
+`unified_bee_frames` fully replaces `supervised_beeframes` starting 2026-03-10.
+
+**Rule for agents and code:** always use the helper `raw_bee_frames_table(date)` from `src/model_monitor/ingestion/` — never hardcode either table name.
+
 ### `CURRATED` typo
 The env variable and some internal database names use the misspelling `CURRATED` (two R's). This is intentional in the existing codebase — do not "fix" it.
 
