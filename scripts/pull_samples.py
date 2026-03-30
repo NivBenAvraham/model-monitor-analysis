@@ -6,12 +6,16 @@ so all preprocessing (outlier removal, 30-min resample, negative-temp fix) is ap
 
 For model monitoring data, queries Athena directly.
 
+BEFORE RUNNING — refresh AWS CodeArtifact credentials (valid for 4 hours):
+
+    source scripts/refresh_aws_credentials.sh
+
 Usage:
+    source scripts/refresh_aws_credentials.sh
     python scripts/pull_samples.py
 
 Requirements:
     pip install -e ".[dev]"
-    AWS credentials configured (aws configure or environment variables)
 """
 
 import sys

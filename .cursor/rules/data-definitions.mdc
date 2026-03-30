@@ -4,6 +4,23 @@ alwaysApply: true
 ---
 
 # Data Definitions
+
+## AWS Credentials — Required Before Any Athena or S3 Access
+
+Credentials expire every **4 hours**. Before running any script or notebook that touches Athena or S3, refresh them:
+
+```bash
+source scripts/refresh_aws_credentials.sh
+```
+
+This sets:
+- `AWS_ARTIFACT_TOKEN` — CodeArtifact token from `beehero` domain (us-east-1)
+- `UV_INDEX_BEEHERO_PYPI_USERNAME` — `aws`
+- `UV_INDEX_BEEHERO_PYPI_PASSWORD` — the token above
+
+Use `source` (not `bash`) so the exports apply to your current shell session.
+
+---
 In BeeHero world we have two types of groups that both called 'group_id' : Beekeeper and Grower.
 in this repo we speak about Beekeeper only.
 we usually speak on group_id term.
