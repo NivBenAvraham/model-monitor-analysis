@@ -1,5 +1,5 @@
 ---
-description: Data definitions — tables, columns, entities, and known quirks for model-monitor-analysis
+description: Data definitions — tables, columns, entities, and known quirks for model-monitor-analysis (temp_metric focus)
 alwaysApply: true
 ---
 
@@ -18,6 +18,16 @@ This sets:
 - `UV_INDEX_BEEHERO_PYPI_USERNAME` — `aws`
 - `UV_INDEX_BEEHERO_PYPI_PASSWORD` — the token above
 
+### Athena Connection Config
+
+| Setting | Value |
+|---|---|
+| `S3_STAGING_DIR` | `s3://us-east-1-data-analytics-storage/athena-query-results/` |
+| `REGION` | `us-east-1` |
+| `WORKGROUP` | `data_analytics` |
+| `CURATED_DATABASE` | `data_lake_curated_data` |
+| `RAW_DATABASE` | `data_lake_raw_data` |
+
 Use `source` (not `bash`) so the exports apply to your current shell session.
 
 ---
@@ -26,143 +36,100 @@ in this repo we speak about Beekeeper only.
 we usually speak on group_id term.
 ## Entity Hierarchy
 
+In BeeHero, `group_id` == `beekeeper_id`. This repo covers **Beekeeper groups only**.
+
 ```
-beekeeper_id == group_id  (beekeeper unique definder)
-  └── yard_id   (a yard belongs to a beekeeper/group_id)
+group_id  (beekeeper)
+  └── yard_id
         └── sensor_mac_address  (one sensor per hive)
-                    └── gateway_mac_address  (sensors report via a gateway)         
+              └── gateway_mac_address  (sensors report via a gateway)
 ```
 
 ---
 
-## Data Sources
+## Data Sources for temp_metric
 
-### 1. BeeFrame Model Monitoring (Athena — curated DB)
+### 1. Temperature Data — ETL via `temperature_data_export_package`
 
-#### `beekeeper_beeframe_model_monitoring_preprocess`
-Daily preprocessed model predictions per sensor.
+ETL is handled by `temperature_data_export_package` (read-only, from `beehero-streamlit-app`).
+Functions used: `load_sensor_samples()`, `load_gateway_samples()`, `add_hive_size_bucket()`.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `mac` | string | Sensor MAC address (same as `sensor_mac_address` in other tables) |
-| `date` | date | The date of the prediction run |
-| `run_date` | date | Alias / processing date (use with `run_timestamp` for dedup) |
-| `run_timestamp` | timestamp | When the model run was executed in aws |
-| `model_name` | string | Name of the model (e.g. `'supervised_beeframes'`) |
-| `pred_raw` | float | Raw model prediction of bee_frames count for that sensor |
-| `group_id` | string | Hive group the sensor belongs to |
-| `yard_id` | string | Yard the group belongs to |
-| `group_in_season` | bool | Whether the group is currently in an active monitoring season |
-| `groups_in_season_ready_for_review` | bool | Model has been in production ≥ 3 days (grace period passed) |
+Local samples are stored under `data/samples/group_{id}/{date}/` as Parquet files.
 
-**Important:** always dedup using `row_number() OVER (PARTITION BY mac, date, model_name ORDER BY run_timestamp DESC) = 1` — multiple runs can exist per sensor per day.
-
-`beekeeper_beeframe_model_monitoring_preprocess_hourly` — same schema, used when `post_metric=True`.
-
----
-
-#### `beekeeper_beeframe_model_monitoring_validations`
-Human validation decisions per group.
+#### Sensor samples (`{id}_{date}_sensor_temperature.parquet`)
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `timestamp` | timestamp | When the validation was recorded |
-| `group_id` | string | Hive group being validated |
-| `tier1_status` | string | First-level human decision: `'valid'`, `'invalid'`, or null |
-| `tier2_status` | string | Second-level override: `'valid'`, `'invalid'`, or null |
-
-**Important:** tier2 overrides tier1. Null means no decision was made at that tier yet.
-
----
-
-#### `ops_inspections`
-Operational inspections performed by field teams.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `sensor_mac_address` | string | Sensor that was inspected |
-| `utc_timestamp` | timestamp | When the inspection occurred |
-| `total_bee_frames` | float | Human-counted bee frames observed during inspection |
-| `group_id` | string | Group the sensor belongs to |
-| `yard_id` | string | Yard the group belongs to |
-
----
-
-#### `yard_inspections`
-Yard-level inspections with full bee_frames distribution data.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `yard_id` | string | Yard that was inspected |
-| `utc_end_time` | timestamp | When the yard inspection ended |
-| `bee_frames_distribution` | string | JSON-encoded histogram: `{"0": count, "1": count, ..., "20": count}` |
-
-**Important:** `bee_frames_distribution` is stored as a string and must be parsed with `ast.literal_eval` before use. Multiple inspections per yard per day may exist — aggregate by summing histograms.
-
----
-
-#### `daily_hive_health_monitoring`
-Daily hive health signal per sensor.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `sensor_mac_address` | string | Sensor identifier |
-| `run_date` | date | Date of the health assessment |
-| `is_healthy` | bool | Whether the hive was classified as healthy |
-| `group_id` | string | Group the sensor belongs to |
-| `yard_id` | string | Yard the group belongs to |
-
-**Important:** only use rows where `is_healthy IS NOT NULL`.
-
----
-
-### 2. Temperature Data (Athena — curated + raw DB)
-ETL is handled by `temperature_data_export_package` (read-only).
-Use `load_temperature_data()` from that package to get clean DataFrames.
-
-#### Sensor samples (hive temperature) — after ETL
-| Column | Type | Description |
-|--------|------|-------------|
-| `sensor_mac_address` | string | Hive sensor |
+| `sensor_mac_address` | string | Hive sensor identifier |
 | `timestamp` | datetime | 30-minute bin (resampled mean) |
-| `pcb_temperature_one` | float | Hive internal temperature (°C). Already cleaned. |
+| `pcb_temperature_one` | float | **Hive** internal temperature (°C) |
 | `gateway_mac_address` | string | Gateway the sensor reported through |
-| `group_id` | string | Hive group (merged from hive_updates) |
-| `hive_size_bucket` | string | `'small'` / `'medium'` / `'large'` based on bee_frames count |
+| `group_id` | string | Hive group |
+| `hive_size_bucket` | string | `'small'` / `'medium'` / `'large'` — derived from bee_frames |
 
-#### Gateway samples (ambient temperature) — after ETL
+#### Gateway samples (`{id}_{date}_gateway_temperature.parquet`)
+
 | Column | Type | Description |
 |--------|------|-------------|
 | `gateway_mac_address` | string | Gateway device |
 | `timestamp` | datetime | Measurement timestamp |
-| `pcb_temperature_two` | float | Ambient (outdoor) temperature (°C). Null rows already dropped. |
+| `pcb_temperature_two` | float | **Ambient** (outdoor) temperature (°C) |
 
-#### Hive updates — after ETL
+#### Hive updates (`{id}_{date}_hive_updates.parquet`)
+
 | Column | Type | Description |
 |--------|------|-------------|
 | `sensor_mac_address` | string | Hive sensor |
 | `created` | datetime | When the update was recorded |
 | `group_id` | string | Hive group |
-| `bee_frames` | int | Human-recorded bee frame count at update time |
-| `model` | string | Model version associated with this update |
+| `bee_frames` | int | bee frame count |
+| `model` | string | Model version used for this date |
+
+---
+
+### 2. Hive Updates Query (Athena — raw DB)
+
+Queried via `hive_updates_query()` from `src/model_monitor/ingestion/`.
+The FROM table depends on the query date — always use the helper, never hardcode.
+
+#### Table Source Switch — `supervised_beeframes` vs `unified_bee_frames` (IMPORTANT)
+
+| Date range | Table |
+|---|---|
+| date ≤ 2026-03-09 | `data_lake_raw_data.supervised_beeframes` |
+| date ≥ 2026-03-10 | `data_lake_raw_data.unified_bee_frames` |
+
+**Rule:** always call `raw_bee_frames_table(date)` from `src/model_monitor/ingestion/` — never hardcode either table name.
+
+---
+
+### 3. Ground Truth (`data/temp_ground_truth/ground_truth_statuess_ca_2026.csv`)
+
+Human-labelled model status per group per date. Source for `extraction_plan.py`.
+
+| Column | Values | Description |
+|--------|--------|-------------|
+| `date` | `YYYY-MM-DD` | The evaluation date |
+| `group_id` | int | Beekeeper group |
+| `status` | `valid` / `invalid` / `needs_recalibration` | Human ground truth label |
+
+**51 groups, 643 labelled dates** (as of 2026-03-26).
 
 ---
 
 ## Key Concepts
 
 ### bee_frames
-An integer (0–20) representing how many frames of bees are in a hive box.
-`pred_raw` is the model's prediction of this number.
-`total_bee_frames` (ops) and histograms (yard) are the human-measured ground truth.
+Integer (0–20) representing hive occupancy — how many frames of bees are in the box.
 
 ### hive_size_bucket
-Derived from `bee_frames` count:
+Derived from `bee_frames`:
 - `'small'`:  bee_frames < 6
 - `'medium'`: 6 ≤ bee_frames < 10
 - `'large'`:  bee_frames ≥ 10
 
 ### pcb_temperature_one vs pcb_temperature_two
-- `pcb_temperature_one` — **hive** temperature (sensor inside the hive box)
+- `pcb_temperature_one` — **hive** temperature (sensor inside the box)
 - `pcb_temperature_two` — **ambient** temperature (gateway, outside)
 
 ### Temperature data quirks (already handled by ETL)
@@ -171,27 +138,54 @@ Derived from `bee_frames` count:
 - Outlier removal: z-score threshold 3, applied per sensor
 - Resampled to 30-minute means before use
 
-### Table Source Switch — `supervised_beeframes` vs `unified_bee_frames` (IMPORTANT)
-
-Both tables live in `data_lake_raw_data`. Which one to use depends on the query date:
-
-| Date range | Table to use |
-|---|---|
-| date ≤ 2026-03-09 | `data_lake_raw_data.supervised_beeframes` |
-| date ≥ 2026-03-10 | `data_lake_raw_data.unified_bee_frames` |
-
-`unified_bee_frames` fully replaces `supervised_beeframes` starting 2026-03-10.
-
-**Rule for agents and code:** always use the helper `raw_bee_frames_table(date)` from `src/model_monitor/ingestion/` — never hardcode either table name.
-
 ### `CURRATED` typo
-The env variable and some internal database names use the misspelling `CURRATED` (two R's). This is intentional in the existing codebase — do not "fix" it.
+Some internal database names use the misspelling `CURRATED` (two R's). This is intentional — do not "fix" it.
 
 ---
 
-## TODO — Add More Definitions Here
-- [ ] Seasonal activity / commitment_date meaning
-- [ ] What `group_in_season` transitions look like (when does a group enter/leave season?)
-- [ ] Model version naming conventions
-- [ ] Valuation data schema (`valuations` table)
-- [ ] Any additional tables from beehero-model-monitoring not listed above
+## temp_metric — Phase Overview
+
+> **Full spec and logic details live in `scripts/temp_metric/for_temp_metric.txt`.**
+> That file is the source of truth for phase definitions, rules, and thresholds rationale.
+> When the logic changes, update that file first, then reflect it in the code.
+
+### Implementation
+
+| Phase | Function | File |
+|-------|----------|------|
+| Phase 1 — Feature Engineering | `compute()` | `src/model_monitor/metrics/temp_metric.py` |
+| Phase 2 — Grading | `grade()` | `src/model_monitor/metrics/temp_metric.py` |
+
+Thresholds: `configs/thresholds.yaml` → `metrics.temp_metric.grading`
+
+Output statuses: `PASS` / `WARNING` / `FAIL` with a `reason` string.
+
+### Results Layout
+
+```
+data/results/group_{id}/{date}/
+    {id}_{date}_temp_metric.parquet          ← per-sensor results + status + reason
+    {id}_{date}_temp_metric_summary.parquet  ← mean metrics + grade counts per hive_size
+data/results/temp_metric_results.parquet     ← all groups/dates combined
+```
+
+---
+
+## temp_metric Skill Layout (`skills/temp_metric/`)
+
+Each skill is a self-contained end-to-end pipeline. See `skills/temp_metric/README.md` for full details.
+
+```
+skills/temp_metric/
+  spec/for_temp_metric.txt      ← source of truth: logic, rules, thresholds rationale
+  config/extraction_plan.py     ← 51 groups, 643 dates, model names (from ground truth CSV)
+  scripts/pull_samples.py       ← Step 1: Athena → local Parquet
+  scripts/run_temp_metric.py    ← Step 2: compute + grade → result Parquet
+```
+
+**Run order:**
+```bash
+source scripts/refresh_aws_credentials.sh
+nohup python skills/temp_metric/scripts/pull_samples.py > pull_log.txt 2>&1 &
+python skills/temp_metric/scripts/run_temp_metric.py
+```

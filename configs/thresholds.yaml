@@ -40,14 +40,24 @@ metrics:
     # See: src/model_monitor/metrics/post_validation.py
 
   temp_metric:
-    # EXPERIMENTAL — thresholds to be defined during exploration.
-    # Candidate: differential between pcb_temperature_one (hive) and pcb_temperature_two (ambient).
-    # Candidate: z-score threshold for outlier flagging (already 3 in source ETL).
-    zscore_threshold: 3               # inherited from temperature_data_export_package preprocessing
-    temp_range_min: -30               # valid hive sensor range (pcb_temperature_one)
+    # Phase 1 — valid sensor ranges (inherited from temperature_data_export_package preprocessing)
+    zscore_threshold: 3
+    temp_range_min: -30
     temp_range_max: 100
-    ambient_temp_range_min: -30       # valid ambient/gateway range (pcb_temperature_two)
+    ambient_temp_range_min: -30
     ambient_temp_range_max: 100
+
+    # Phase 2 — grading thresholds derived from Phase 1 percentile distributions
+    # (groups 491, 518, 625, 790 — Feb/Mar 2026)
+    grading:
+      large:
+        std_dev_max: 0.75       # above → too volatile; large 90th pct=0.46
+        corr_max: 0.60          # above → follows ambient; large 90th pct=0.50
+        comfort_min: 75.0       # below → not holding brood temp; large 10th pct=100%
+      medium:
+        mean_temp_min: 22.0     # below → too cold; medium 10th pct=23.7°C
+      small:
+        std_dev_min: 0.80       # below → suspiciously stable; small 10th pct=1.17
 
 decision:
   # Populated once decision rules are defined.

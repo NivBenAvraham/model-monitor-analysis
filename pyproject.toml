@@ -9,6 +9,9 @@ description = "BeeFrame model performance monitoring and analysis"
 requires-python = ">=3.11"
 dependencies = [
     "pandas",
+    "pyarrow",
+    "scipy",
+    "plotly",
     "pyyaml",
     "boto3",
     "psycopg2-binary",
