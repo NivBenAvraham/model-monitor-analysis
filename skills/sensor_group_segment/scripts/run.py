@@ -11,17 +11,19 @@ Each sensor is a data point (~341K sensor-day rows across 423 train samples).
 
 Usage:
     python skills/sensor_group_segment/scripts/run.py
+    python skills/sensor_group_segment/scripts/run.py --output "data/results/2026-04-05 sensor grp segment"
 
 Output per (group, date):
-    data/results/sensor_group_segment/group_{id}/{date}/{id}_{date}_sensor_group_segment.parquet
-    data/results/sensor_group_segment/group_{id}/{date}/{id}_{date}_sensor_group_segment_summary.parquet
+    <output_dir>/group_{id}/{date}/{id}_{date}_sensor_group_segment.parquet
+    <output_dir>/group_{id}/{date}/{id}_{date}_sensor_group_segment_summary.parquet
 
 Flat file across all groups/dates:
-    data/results/sensor_group_segment/results.parquet
+    <output_dir>/results.parquet
 """
 
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 from pathlib import Path
@@ -40,8 +42,17 @@ from config.extraction_plan import EXTRACTION_PLAN
 
 GROUPS     = sorted({group_id for group_id, *_ in EXTRACTION_PLAN})
 DATA_DIR   = REPO_ROOT / "data/samples/train"   # train split only — never touch test
-OUTPUT_DIR = REPO_ROOT / "data/results/sensor_group_segment"
 THRESHOLDS = SKILL_ROOT / "config/thresholds.yaml"
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Run sensor_group_segment (Layer 1) on train data.")
+    p.add_argument(
+        "--output", "-o",
+        default=str(REPO_ROOT / "data/results/sensor_group_segment"),
+        help="Output directory for results (default: data/results/sensor_group_segment)",
+    )
+    return p.parse_args()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s")
 log = logging.getLogger(__name__)
@@ -95,7 +106,13 @@ def build_summary(result: pd.DataFrame, group_id: int, date_str: str) -> pd.Data
 
 
 def main() -> None:
+    args = parse_args()
+    OUTPUT_DIR = Path(args.output)
+    if not OUTPUT_DIR.is_absolute():
+        OUTPUT_DIR = REPO_ROOT / OUTPUT_DIR
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    log.info(f"Output → {OUTPUT_DIR}")
+
     thresholds = load_thresholds()
 
     all_results: list[pd.DataFrame] = []

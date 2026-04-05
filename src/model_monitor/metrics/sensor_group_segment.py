@@ -60,6 +60,10 @@ See: skills/sensor_group_segment/scripts/calibrate_thresholds.py
 Output of grade(): same DataFrame as compute() plus two columns:
   status  — PASS | WARNING | FAIL
   reason  — human-readable explanation of which rule fired
+
+The per-sensor status output is consumed by Layer 2
+(group_model_temperature_health) which aggregates across sensors
+to decide VALID / INVALID per (group_id, date).
 """
 
 from __future__ import annotations
@@ -184,58 +188,79 @@ def grade(df: pd.DataFrame, thresholds: dict) -> pd.DataFrame:
     Parameters
     ----------
     df         : output of compute() — one row per (date, sensor_mac_address)
-    thresholds : dict loaded from skills/sensor_group_segment/config/thresholds.yaml → metrics.sensor_group_segment.grading
+    thresholds : dict loaded from skills/sensor_group_segment/config/thresholds.yaml
+                 → metrics.sensor_group_segment.grading
 
     Returns
     -------
     Same DataFrame with two new columns: status, reason
     """
-    t = thresholds
-    large  = t["large"]
-    medium = t["medium"]
-    small  = t["small"]
+    large  = thresholds["large"]
+    medium = thresholds["medium"]
+    small  = thresholds["small"]
 
-    statuses: list[str] = []
-    reasons:  list[str] = []
+    size = df["hive_size_bucket"].str.lower()
+    corr = df["ambient_correlation"]
 
-    for _, row in df.iterrows():
-        size    = str(row["hive_size_bucket"]).lower()
-        std_dev = row["std_dev"]
-        corr    = row["ambient_correlation"]
-        comfort = row["percent_comfort"]
-        mean_t  = row["mean_temp"]
+    # ── boolean masks (vectorized) ──────────────────────────────────────────
+    is_large  = size == "large"
+    is_medium = size == "medium"
+    is_small  = size == "small"
 
-        if size == "large":
-            fired = []
-            if std_dev > large["std_dev_max"]:
-                fired.append(f"std_dev={std_dev:.2f} > {large['std_dev_max']}")
-            if not np.isnan(corr) and corr > large["corr_max"]:
-                fired.append(f"corr={corr:.2f} > {large['corr_max']}")
-            if comfort < large["comfort_min"]:
-                fired.append(f"comfort={comfort:.1f}% < {large['comfort_min']}%")
-            if fired:
-                statuses.append("FAIL")
-                reasons.append("Large hive physics mismatch: " + "; ".join(fired))
-                continue
+    # Rule A sub-conditions
+    cond_std     = is_large & (df["std_dev"] > large["std_dev_max"])
+    cond_corr    = is_large & corr.notna() & (corr > large["corr_max"])
+    cond_comfort = is_large & (df["percent_comfort"] < large["comfort_min"])
+    rule_a = cond_std | cond_corr | cond_comfort
 
-        elif size == "medium":
-            if mean_t < medium["mean_temp_min"]:
-                statuses.append("WARNING")
-                reasons.append(f"Too cold for medium hive: mean_temp={mean_t:.1f}°C < {medium['mean_temp_min']}°C")
-                continue
+    rule_b = is_medium & (df["mean_temp"] < medium["mean_temp_min"])
+    rule_c = is_small  & (df["std_dev"]   < small["std_dev_min"])
 
-        elif size == "small":
-            if std_dev < small["std_dev_min"]:
-                statuses.append("WARNING")
-                reasons.append(f"Unexpected stability for small hive: std_dev={std_dev:.2f} < {small['std_dev_min']}")
-                continue
+    # ── status (vectorized) ─────────────────────────────────────────────────
+    status = np.select(
+        [rule_a, rule_b, rule_c],
+        ["FAIL", "WARNING", "WARNING"],
+        default="PASS",
+    )
 
-        statuses.append("PASS")
-        reasons.append("Physics align with prediction")
+    # ── reason strings ──────────────────────────────────────────────────────
+    # Rule A: join whichever sub-conditions fired into one string
+    std_part     = np.where(cond_std,
+                            "std_dev=" + df["std_dev"].round(2).astype(str)
+                            + " > " + str(large["std_dev_max"]), "")
+    corr_part    = np.where(cond_corr,
+                            "corr=" + corr.round(2).astype(str)
+                            + " > " + str(large["corr_max"]), "")
+    comfort_part = np.where(cond_comfort,
+                            "comfort=" + df["percent_comfort"].round(1).astype(str)
+                            + "% < " + str(large["comfort_min"]) + "%", "")
+
+    fail_detail = (
+        pd.DataFrame({"a": std_part, "b": corr_part, "c": comfort_part})
+        .apply(lambda r: "; ".join(v for v in r if v), axis=1)
+    )
+    reason_a = "Large hive physics mismatch: " + fail_detail
+
+    reason_b = (
+        "Too cold for medium hive: mean_temp="
+        + df["mean_temp"].round(1).astype(str)
+        + "°C < " + str(medium["mean_temp_min"]) + "°C"
+    )
+    reason_c = (
+        "Unexpected stability for small hive: std_dev="
+        + df["std_dev"].round(2).astype(str)
+        + " < " + str(small["std_dev_min"])
+    )
+
+    reason = np.select(
+        [rule_a, rule_b, rule_c],
+        [reason_a.values, reason_b.values, reason_c.values],
+        default="Physics align with prediction",
+    )
 
     result = df.copy()
-    result["status"] = statuses
-    result["reason"] = reasons
+    result["status"] = status
+    result["reason"] = reason
     return result
 
 
