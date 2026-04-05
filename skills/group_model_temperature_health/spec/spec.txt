@@ -1,0 +1,61 @@
+GROUP MODEL TEMPERATURE HEALTH — Spec (Layer 2)
+═══════════════════════════════════════════════
+
+STATUS: placeholder — not yet implemented.
+
+─────────────────────────────────────────────────────────────────
+PURPOSE
+─────────────────────────────────────────────────────────────────
+Layer 2 of the temperature-based model monitoring pipeline.
+
+Given the per-sensor outputs of sensor_group_segment (Layer 1),
+decide whether the bee-frames model is working correctly for a
+given (group_id, date).
+
+Output: VALID / INVALID per (group_id, date).
+
+─────────────────────────────────────────────────────────────────
+INPUTS
+─────────────────────────────────────────────────────────────────
+- Layer 1 results: data/results/sensor_group_segment/
+    Per-sensor features and PASS/WARNING/FAIL grades per (group, date).
+
+- Ground truth labels: ground_truth/ground_truth_statuess_ca_2026.csv
+    Human-labelled VALID / INVALID per (group_id, date).
+    Used for calibration and evaluation.
+
+- Train/test split: data/samples/split_manifest.csv
+    75/25 stratified split of (group_id, date) pairs.
+    Valid + invalid only (needs_recalibration excluded).
+
+─────────────────────────────────────────────────────────────────
+DATA UNIT
+─────────────────────────────────────────────────────────────────
+Each data point is one (group_id, date) pair — ~565 labelled pairs total.
+  Train: 423 pairs (valid=269, invalid=154)
+  Test:  142 pairs (valid=90, invalid=52)
+
+─────────────────────────────────────────────────────────────────
+APPROACH (to be defined)
+─────────────────────────────────────────────────────────────────
+Open questions:
+  1. Which aggregations of Layer 1 sensor outputs best separate
+     VALID from INVALID at the group-date level?
+     (See exploration in skills/sensor_group_segment/notebooks/)
+
+  2. Rule-based or model-based decision?
+
+  3. Which features showed the strongest discrimination in exploration:
+     - pct_full_day (d=0.52 for large, d=0.51 for medium) — strongest signal
+     - std_dev_spread across sensors (d=0.47 for large)
+     - max_std_dev across sensors (d=0.46 for large)
+     - frac_high_std sensors (d=0.44 for large)
+     - comfort_range across sensors (d=0.45 for small)
+
+─────────────────────────────────────────────────────────────────
+OUTPUT
+─────────────────────────────────────────────────────────────────
+Per (group_id, date):
+  health_status  — VALID | INVALID
+  confidence     — TBD
+  reason         — which signals drove the decision

@@ -54,6 +54,9 @@ data/
 *.db
 *.sqlite
 
+# Exception: ground truth labels are small, versioned CSVs that belong in the repo
+!ground_truth/*.csv
+
 # JSON (exclude notebooks/configs but not data)
 # Note: .json files in src/ or configs/ are fine — only data JSONs are a risk
 # Uncomment if needed: *.json

@@ -1,5 +1,5 @@
 ---
-description: Data definitions — tables, columns, entities, and known quirks for model-monitor-analysis (temp_metric focus)
+description: Data definitions — tables, columns, entities, and known quirks for model-monitor-analysis
 alwaysApply: true
 ---
 
@@ -47,7 +47,7 @@ group_id  (beekeeper)
 
 ---
 
-## Data Sources for temp_metric
+## Data Sources for sensor_group_segment
 
 ### 1. Temperature Data — ETL via `temperature_data_export_package`
 
@@ -143,49 +143,114 @@ Some internal database names use the misspelling `CURRATED` (two R's). This is i
 
 ---
 
-## temp_metric — Phase Overview
+## Two-Layer Architecture
 
-> **Full spec and logic details live in `scripts/temp_metric/for_temp_metric.txt`.**
-> That file is the source of truth for phase definitions, rules, and thresholds rationale.
-> When the logic changes, update that file first, then reflect it in the code.
+```
+Raw sensor data (per sensor, per group, per date)
+        │
+        ▼
+┌─────────────────────────────────────────────────────┐
+│  Layer 1: sensor_group_segment  (per SENSOR)        │
+│  "Does this sensor's physics match the predicted    │
+│   hive size (small / medium / large)?"              │
+│  Output: PASS / WARNING / FAIL per sensor           │
+│  Data unit: individual sensor (~341K rows total)    │
+│  Skill: skills/sensor_group_segment/                │
+└─────────────────────────────────────────────────────┘
+        │  aggregate per (group_id, date)
+        ▼
+┌─────────────────────────────────────────────────────┐
+│  Layer 2: group_model_temperature_health            │
+│           (per GROUP per DATE)  ← NOT YET BUILT     │
+│  "Is the model valid for this group today?"         │
+│  Output: VALID / INVALID per (group_id, date)       │
+│  Ground truth: ground_truth/ CSV                    │
+│  Skill: skills/group_model_temperature_health/      │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## Layer 1 — sensor_group_segment
+
+> **Full spec:** `skills/sensor_group_segment/spec/spec.txt`
 
 ### Implementation
 
 | Phase | Function | File |
 |-------|----------|------|
-| Phase 1 — Feature Engineering | `compute()` | `src/model_monitor/metrics/temp_metric.py` |
-| Phase 2 — Grading | `grade()` | `src/model_monitor/metrics/temp_metric.py` |
+| Phase 1 — Feature Engineering | `compute()` | `src/model_monitor/metrics/sensor_group_segment.py` |
+| Phase 2 — Grading | `grade()` | `src/model_monitor/metrics/sensor_group_segment.py` |
 
-Thresholds: `configs/thresholds.yaml` → `metrics.temp_metric.grading`
+Thresholds: `skills/sensor_group_segment/config/thresholds.yaml` → `metrics.sensor_group_segment.grading`
 
-Output statuses: `PASS` / `WARNING` / `FAIL` with a `reason` string.
+Output per sensor: `PASS` / `WARNING` / `FAIL` + `reason` string.
 
 ### Results Layout
 
 ```
-data/results/group_{id}/{date}/
-    {id}_{date}_temp_metric.parquet          ← per-sensor results + status + reason
-    {id}_{date}_temp_metric_summary.parquet  ← mean metrics + grade counts per hive_size
-data/results/temp_metric_results.parquet     ← all groups/dates combined
+data/results/sensor_group_segment/group_{id}/{date}/
+    {id}_{date}_sensor_group_segment.parquet          ← per-sensor results
+    {id}_{date}_sensor_group_segment_summary.parquet  ← mean metrics + grade counts per hive_size
+data/results/sensor_group_segment/results.parquet     ← all groups/dates combined
 ```
 
----
-
-## temp_metric Skill Layout (`skills/temp_metric/`)
-
-Each skill is a self-contained end-to-end pipeline. See `skills/temp_metric/README.md` for full details.
+### Skill Layout (`skills/sensor_group_segment/`)
 
 ```
-skills/temp_metric/
-  spec/for_temp_metric.txt      ← source of truth: logic, rules, thresholds rationale
-  config/extraction_plan.py     ← 51 groups, 643 dates, model names (from ground truth CSV)
-  scripts/pull_samples.py       ← Step 1: Athena → local Parquet
-  scripts/run_temp_metric.py    ← Step 2: compute + grade → result Parquet
+skills/sensor_group_segment/
+  spec/spec.txt               ← source of truth: logic, rules, thresholds rationale
+  config/thresholds.yaml      ← all grading thresholds (never hardcode in code)
+  config/extraction_plan.py   ← 51 groups, 643 dates, model names
+  config/split_config.py      ← train/test split config (75/25, valid+invalid only)
+  scripts/pull_samples.py     ← Step 1: Athena → local Parquet
+  scripts/run.py              ← Step 2: compute + grade → result Parquet
+  scripts/calibrate_thresholds.py ← calibrate thresholds from sensor physics
+  scripts/create_split.py     ← create train/test symlinks + manifest
+  notebooks/exploration.ipynb ← interactive data exploration
 ```
 
 **Run order:**
 ```bash
 source scripts/refresh_aws_credentials.sh
-nohup python skills/temp_metric/scripts/pull_samples.py > pull_log.txt 2>&1 &
-python skills/temp_metric/scripts/run_temp_metric.py
+nohup python skills/sensor_group_segment/scripts/pull_samples.py > pull_log.txt 2>&1 &
+python skills/sensor_group_segment/scripts/create_split.py
+python skills/sensor_group_segment/scripts/run.py
 ```
+
+---
+
+## Layer 2 — group_model_temperature_health
+
+> **Status: not yet implemented.** Skeleton at `skills/group_model_temperature_health/`.
+> See `skills/group_model_temperature_health/spec/spec.txt` for design notes.
+
+### Ground Truth
+
+Shared by both layers. Serves as:
+- Layer 1: list of (group_id, date) pairs to pull and evaluate
+- Layer 2: labels for training/evaluating the model health decision
+
+```
+ground_truth/ground_truth_statuess_ca_2026.csv
+```
+
+| Column | Values | Description |
+|--------|--------|-------------|
+| `date` | `YYYY-MM-DD` | Evaluation date |
+| `group_id` | int | Beekeeper group |
+| `status` | `valid` / `invalid` / `needs_recalibration` | Human ground truth |
+
+**51 groups, 643 labelled dates** (as of 2026-03-26).
+
+### Train/Test Split (for Layer 2)
+
+Split manifest: `data/samples/split_manifest.csv`
+- Valid + invalid only (needs_recalibration excluded from split)
+- 75/25 stratified by status, sorted by (group_id, date)
+
+| | Train | Test | Total |
+|---|---|---|---|
+| valid | 269 | 90 | 359 |
+| invalid | 154 | 52 | 206 |
+| **TOTAL** | **423** | **142** | **565** |
