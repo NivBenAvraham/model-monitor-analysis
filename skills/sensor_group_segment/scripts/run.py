@@ -4,7 +4,7 @@ sensor_group_segment — Layer 1 runner.
 Runs Phase 1 + Phase 2 on TRAIN data only (valid + invalid samples).
 The test set (data/samples/test/) is never touched here.
 
-Phase 1 — feature engineering: std_dev, iqr, ambient_correlation, mean_temp, percent_comfort
+Phase 1 — feature engineering: std_dev, iqr, ambient_corr_median, ambient_corr_mean, min_temp, mean_temp, max_temp, median_temp, percent_comfort
 Phase 2 — grading: compare predicted hive size against observed physics → PASS / WARNING / FAIL
 
 Each sensor is a data point (~341K sensor-day rows across 423 train samples).
@@ -41,7 +41,7 @@ from model_monitor.metrics.sensor_group_segment import compute, grade
 from config.extraction_plan import EXTRACTION_PLAN
 
 GROUPS     = sorted({group_id for group_id, *_ in EXTRACTION_PLAN})
-DATA_DIR   = REPO_ROOT / "data/samples/train"   # train split only — never touch test
+DATA_DIR   = REPO_ROOT / "data/samples/temperature-export/train"   # train split only — never touch test
 THRESHOLDS = SKILL_ROOT / "config/thresholds.yaml"
 
 
@@ -88,7 +88,7 @@ def build_summary(result: pd.DataFrame, group_id: int, date_str: str) -> pd.Data
     """Mean metrics + PASS/WARNING/FAIL counts per hive size."""
     metrics = (
         result
-        .groupby("hive_size_bucket")[["std_dev", "ambient_correlation", "mean_temp", "percent_comfort"]]
+        .groupby("hive_size_bucket")[["std_dev", "ambient_corr_median", "ambient_corr_mean", "mean_temp", "percent_comfort"]]
         .mean()
         .round(2)
     )
@@ -151,12 +151,43 @@ def main() -> None:
     out_path = OUTPUT_DIR / "results.parquet"
     combined.to_parquet(out_path, index=False)
 
-    log.info(f"\nSaved → {out_path}  ({len(combined)} rows — {combined['group_id'].nunique()} groups, {combined['date'].nunique()} dates)")
+    log.info(f"\nSaved → {out_path}  ({len(combined):,} rows — {combined['group_id'].nunique()} groups, {combined['date'].nunique()} dates)")
 
+    # ── Grade distribution ───────────────────────────────────────────────────
     overall = combined["status"].value_counts()
-    log.info(f"\nOverall grade distribution:\n{overall.to_string()}")
+    total   = len(combined)
+    grade_lines = "\n".join(
+        f"  {s:<8} {overall.get(s, 0):>7,}  ({100 * overall.get(s, 0) / total:.1f}%)"
+        for s in ["PASS", "WARNING", "FAIL"]
+    )
+    log.info(f"\nOverall grade distribution  (total={total:,}):\n{grade_lines}")
 
-    log.info(f"\nMean metrics by hive size:\n{combined.groupby('hive_size_bucket')[['std_dev','ambient_correlation','mean_temp','percent_comfort']].mean().round(3).to_string()}")
+    # ── Per hive-size summary: mean ± std for key metrics ───────────────────
+    METRIC_COLS = ["std_dev", "ambient_corr_median", "ambient_corr_mean",
+                   "min_temp", "mean_temp", "max_temp", "median_temp", "percent_comfort"]
+    grp = combined.groupby("hive_size_bucket")
+
+    header = f"  {'metric':<24}{'large':>20}{'medium':>20}{'small':>20}"
+    divider = "  " + "-" * (24 + 60)
+    rows = [header, divider]
+
+    for col in METRIC_COLS:
+        means = grp[col].mean()
+        stds  = grp[col].std()
+        def fmt(size: str) -> str:
+            if size not in means.index:
+                return f"{'—':>20}"
+            return f"{means[size]:>10.3f} ± {stds[size]:<7.3f}"
+        rows.append(f"  {col:<24}{fmt('large')}{fmt('medium')}{fmt('small')}")
+
+    # Sensor count per hive size
+    rows.append(divider)
+    counts = grp.size()
+    def cnt(size: str) -> str:
+        return f"{counts.get(size, 0):>20,}"
+    rows.append(f"  {'n_sensors':<24}{cnt('large')}{cnt('medium')}{cnt('small')}")
+
+    log.info("\nMean ± std by hive size:\n" + "\n".join(rows))
 
 
 if __name__ == "__main__":

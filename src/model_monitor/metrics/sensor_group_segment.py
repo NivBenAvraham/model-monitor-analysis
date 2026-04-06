@@ -15,9 +15,12 @@ itself regardless of outside weather; a weak hive can't.
     How much does the internal temperature fluctuate?
     Large hive → tight, low variance.  Small hive → noisy, high variance.
 
-  Metric 2 — Decoupling (ambient_correlation)
+  Metric 2 — Decoupling (ambient_corr_median, ambient_corr_mean)
     Does the hive temperature follow the outside weather curve?
     Large hive → r ≈ 0 (independent).  Small hive → r → 1 (slave to ambient).
+    Ambient reference = per-sensor local composite (median / mean across only
+    the gateways that sensor communicated through) — handles groups that span
+    multiple yards without mixing distant gateways' weather.
 
   Metric 3 — Comfort Zone (mean_temp, percent_comfort)
     How often is the hive in the brood-rearing band [32°C, 36°C]?
@@ -29,12 +32,14 @@ Data flow:
                                  gateway_mac_address   (join key to gateway)
   gateway_temperature parquet →  pcb_temperature_two  (ambient temp)
 
-  Both files are resampled to 1-hour means and inner-joined on
-  (gateway_mac_address, hour) before computing correlations,
-  because sensor and gateway timestamps do not align exactly.
+  Both files are resampled to 1-hour means. For each sensor, ambient temp
+  is aggregated (median + mean) from only the gateways that sensor actually
+  communicated through — its local neighborhood, not the whole group.
 
 Output of compute(): one row per (group_id, date, sensor_mac_address) with:
-  std_dev, iqr, ambient_correlation, mean_temp, percent_comfort, n_readings
+  gateway_mac_address (primary, metadata only),
+  std_dev, iqr, ambient_corr_median, ambient_corr_mean,
+  min_temp, mean_temp, max_temp, median_temp, percent_comfort, n_readings
 
 ════════════════════════════════════════════════════════════════════
 PHASE 2 — grade()
@@ -86,16 +91,33 @@ MIN_READINGS: int = 2        # drop a sensor if fewer than this many aligned hou
 # Phase 1 helpers — data alignment
 #
 # Sensor and gateway readings land at different timestamps, so we can't join
-# them row-by-row. Instead we resample both to hourly means and then join on
-# (gateway_mac_address, hour). This gives us aligned (internal, ambient) pairs
-# for every sensor for every hour in the window.
+# them row-by-row. Both are resampled to hourly means.
+#
+# Ambient reference is built per sensor — using only the gateways that sensor
+# actually communicated through (its "local" gateways). This avoids mixing
+# ambient readings from distant gateways in groups that span multiple yards.
+#   - 1 gateway  → that gateway's ambient (no aggregation needed)
+#   - N gateways → median + mean across those N per hour
 # ---------------------------------------------------------------------------
 
 def _resample_sensor(sensor_df: pd.DataFrame, freq: str) -> pd.DataFrame:
-    """Hourly mean of internal temp per (sensor_mac_address, gateway_mac_address)."""
+    """Hourly mean of internal temp per sensor_mac_address.
+
+    Also resolves the primary gateway (highest raw count) as metadata, and
+    extracts the full set of gateways each sensor communicated through.
+    """
+    primary_gw = (
+        sensor_df.groupby(["sensor_mac_address", "gateway_mac_address"])
+        .size()
+        .reset_index(name="_cnt")
+        .sort_values("_cnt", ascending=False)
+        .drop_duplicates("sensor_mac_address", keep="first")
+        .drop(columns="_cnt")
+    )
     gw_map = (
         sensor_df[["sensor_mac_address", "gateway_mac_address", "hive_size_bucket", "group_id"]]
-        .drop_duplicates("sensor_mac_address", keep="last")
+        .merge(primary_gw, on=["sensor_mac_address", "gateway_mac_address"], how="inner")
+        .drop_duplicates("sensor_mac_address", keep="first")
     )
     hourly = (
         sensor_df
@@ -118,14 +140,35 @@ def _resample_gateway(gateway_df: pd.DataFrame, freq: str) -> pd.DataFrame:
     )
 
 
+def _sensor_gateway_map(sensor_df: pd.DataFrame) -> pd.DataFrame:
+    """Which gateways did each sensor communicate through?"""
+    return sensor_df[["sensor_mac_address", "gateway_mac_address"]].drop_duplicates()
+
+
 def _align(sensor_df: pd.DataFrame, gateway_df: pd.DataFrame, freq: str) -> pd.DataFrame:
     """
-    Resample both to `freq` and inner-join on (gateway_mac_address, timestamp).
-    Returns one row per (sensor_mac_address, hour) with both internal and ambient temp.
+    Per-sensor local ambient: for each sensor, aggregate ambient temp from
+    only the gateways it actually communicated through, then join by timestamp.
+
+    Returns one row per (sensor_mac_address, hour) with internal_temp +
+    ambient_median + ambient_mean (computed from that sensor's local gateways).
     """
-    sensor_h  = _resample_sensor(sensor_df, freq)
-    gateway_h = _resample_gateway(gateway_df, freq)
-    return sensor_h.merge(gateway_h, on=["gateway_mac_address", "timestamp"], how="inner")
+    sensor_h   = _resample_sensor(sensor_df, freq)
+    gateway_h  = _resample_gateway(gateway_df, freq)
+    sg_map     = _sensor_gateway_map(sensor_df)
+
+    # For each sensor, get all its gateways' hourly ambient readings
+    local_ambient = sg_map.merge(gateway_h, on="gateway_mac_address", how="inner")
+
+    # Aggregate to per-sensor per-hour: median + mean across local gateways
+    local_agg = (
+        local_ambient
+        .groupby(["sensor_mac_address", "timestamp"])["ambient_temp"]
+        .agg(ambient_median="median", ambient_mean="mean")
+        .reset_index()
+    )
+
+    return sensor_h.merge(local_agg, on=["sensor_mac_address", "timestamp"], how="inner")
 
 
 # ---------------------------------------------------------------------------
@@ -145,25 +188,36 @@ def _stability(internal: pd.Series) -> dict[str, float]:
     }
 
 
-def _decoupling(internal: pd.Series, ambient: pd.Series) -> dict[str, float]:
+def _decoupling(internal: pd.Series, ambient_median: pd.Series,
+                 ambient_mean: pd.Series) -> dict[str, float]:
     """Metric 2 — does internal temp move with outside weather?
     r ≈ 0 → hive is thermally independent (strong).
     r → 1 → hive follows ambient curve (weak).
-    Returns NaN if the ambient series is constant (sensor/gateway error)."""
+
+    Computes against both yard-level ambient references so we can compare:
+      ambient_corr_median — correlation with median-across-gateways (robust)
+      ambient_corr_mean   — correlation with mean-across-gateways  (sensitive)
+    Returns NaN if fewer than MIN_READINGS or constant ambient."""
     if len(internal) < MIN_READINGS:
-        return {"ambient_correlation": float("nan")}
+        return {"ambient_corr_median": float("nan"),
+                "ambient_corr_mean":   float("nan")}
     with np.errstate(invalid="ignore"):
-        r, _ = stats.pearsonr(internal, ambient)
-    return {"ambient_correlation": float(r)}
+        r_med, _ = stats.pearsonr(internal, ambient_median)
+        r_mean, _ = stats.pearsonr(internal, ambient_mean)
+    return {"ambient_corr_median": float(r_med),
+            "ambient_corr_mean":   float(r_mean)}
 
 
 def _comfort_zone(internal: pd.Series) -> dict[str, float]:
     """Metric 3 — how often is the hive in the brood-rearing band?
-    mean_temp: overall average internal temperature.
+    min/mean/max/median_temp: distribution of raw internal temperature.
     percent_comfort: % of hours in [32°C, 36°C]. Large hives → ≈ 100%."""
     in_zone = (internal >= COMFORT_LOW) & (internal <= COMFORT_HIGH)
     return {
+        "min_temp":        float(internal.min()),
         "mean_temp":       float(internal.mean()),
+        "max_temp":        float(internal.max()),
+        "median_temp":     float(internal.median()),
         "percent_comfort": float(in_zone.mean() * 100),
     }
 
@@ -200,7 +254,7 @@ def grade(df: pd.DataFrame, thresholds: dict) -> pd.DataFrame:
     small  = thresholds["small"]
 
     size = df["hive_size_bucket"].str.lower()
-    corr = df["ambient_correlation"]
+    corr = df["ambient_corr_median"]  # grading uses the robust yard-level median
 
     # ── boolean masks (vectorized) ──────────────────────────────────────────
     is_large  = size == "large"
@@ -277,9 +331,9 @@ def compute(sensor_df: pd.DataFrame, gateway_df: pd.DataFrame, date: str) -> pd.
     Returns
     -------
     DataFrame with columns:
-        group_id, date, sensor_mac_address, hive_size_bucket,
-        std_dev, iqr, ambient_correlation,
-        mean_temp, percent_comfort, n_readings
+        group_id, date, sensor_mac_address, gateway_mac_address, hive_size_bucket,
+        std_dev, iqr, ambient_corr_median, ambient_corr_mean,
+        min_temp, mean_temp, max_temp, median_temp, percent_comfort, n_readings
     """
     aligned = _align(sensor_df, gateway_df, RESAMPLE_FREQ)
 
@@ -291,14 +345,19 @@ def compute(sensor_df: pd.DataFrame, gateway_df: pd.DataFrame, date: str) -> pd.
     records: list[dict] = []
 
     for sensor_mac, grp in aligned.groupby("sensor_mac_address"):
-        both = grp[["internal_temp", "ambient_temp"]].dropna()
+        both = grp[["internal_temp", "ambient_median", "ambient_mean"]].dropna()
         if len(both) < MIN_READINGS:
             log.debug(f"  skip {sensor_mac}: only {len(both)} aligned hours")
             continue
 
-        row: dict = {"sensor_mac_address": sensor_mac, "n_readings": len(both)}
+        row: dict = {
+            "sensor_mac_address":  sensor_mac,
+            "gateway_mac_address": grp["gateway_mac_address"].iloc[0],
+            "n_readings":          len(both),
+        }
         row.update(_stability(both["internal_temp"]))
-        row.update(_decoupling(both["internal_temp"], both["ambient_temp"]))
+        row.update(_decoupling(both["internal_temp"],
+                               both["ambient_median"], both["ambient_mean"]))
         row.update(_comfort_zone(both["internal_temp"]))
         records.append(row)
 
@@ -309,8 +368,8 @@ def compute(sensor_df: pd.DataFrame, gateway_df: pd.DataFrame, date: str) -> pd.
     result["date"] = date
 
     ordered_cols = [
-        "group_id", "date", "sensor_mac_address", "hive_size_bucket",
-        "std_dev", "iqr", "ambient_correlation",
-        "mean_temp", "percent_comfort", "n_readings",
+        "group_id", "date", "sensor_mac_address", "gateway_mac_address", "hive_size_bucket",
+        "std_dev", "iqr", "ambient_corr_median", "ambient_corr_mean",
+        "min_temp", "mean_temp", "max_temp", "median_temp", "percent_comfort", "n_readings",
     ]
     return result[ordered_cols].sort_values(["group_id", "date", "sensor_mac_address"]).reset_index(drop=True)

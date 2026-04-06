@@ -35,7 +35,7 @@ from config.split_config import (
 )
 
 GT_CSV     = REPO_ROOT / GROUND_TRUTH_CSV
-SAMPLES    = REPO_ROOT / "data/samples"
+SAMPLES    = REPO_ROOT / "data/samples/temperature-export"
 MANIFEST   = REPO_ROOT / MANIFEST_PATH
 TRAIN_ROOT = SAMPLES / "train"
 TEST_ROOT  = SAMPLES / "test"

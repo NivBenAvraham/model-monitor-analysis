@@ -68,7 +68,7 @@ Saves per-sensor results and per-hive-size summaries, plus a flat combined file.
 python skills/sensor_group_segment/scripts/run.py
 
 # Named/dated run → data/results/<run name>/
-python skills/sensor_group_segment/scripts/run.py --output "data/results/2026-04-05 sensor grp segment"
+python skills/sensor_group_segment/scripts/run.py --output "data/results/2026-04-06 sensor grp segment"
 ```
 
 Output files:
