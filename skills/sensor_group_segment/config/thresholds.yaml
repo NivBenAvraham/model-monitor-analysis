@@ -11,21 +11,26 @@ metrics:
 
     # Phase 2 — grading thresholds
     # Target: hive_size_bucket (Layer 1 target — not valid/invalid labels).
-    # Calibrated from 297,196 sensor-day rows across 423 train samples (50 groups, Feb–Mar 2026).
-    # Strategy: p90/p10 of each hive size's own distribution.
-    #   MAX thresholds = size p90 — above this, only 10% of correctly-labeled sensors appear.
-    #   MIN thresholds = size p10 — below this, only 10% of correctly-labeled sensors appear.
-    # Derived via: skills/sensor_group_segment/scripts/calibrate_thresholds.py
-    # Full distributions: data/calibration/calibration_report.csv
+    # Calibrated from 185,540 sensor-day rows across 50 valid groups (Feb–Mar 2026).
+    # Strategy: p90/p10 of each hive size's distribution on valid groups only.
+    #   MAX thresholds = size p90 — above this, only 10% of correctly-labelled sensors appear.
+    #   MIN thresholds = size p10 — below this, only 10% of correctly-labelled sensors appear.
+    # Derived via: EDA in skills/sensor_group_segment/notebooks/hive-size-bucket-threshold-analysis.ipynb
+    # Feature selection: Lean 5 set (percent_comfort, mean_temp, std_dev, iqr, ambient_corr_median)
+    #   validated by Random Forest MDI + permutation importance ranking.
     grading:
       large:
-        std_dev_max: 0.603      # large p90 — above → unusually volatile for a large hive
-        corr_max: 0.737         # large p90 — above → unusually coupled to ambient for large
-        comfort_min: 95.833     # large p10 — below → unusually out of brood zone for large
+        std_dev_max: 0.531      # large p90 — above → unusually volatile for a large hive
+        iqr_max: 0.689          # large p90 — NEW: robust stability check (outlier-insensitive)
+        corr_max: 0.749         # large p90 — above → unusually coupled to ambient for large
+        comfort_min: 97.917     # large p10 — below → unusually out of brood zone for large
       medium:
-        mean_temp_min: 24.946   # medium p10 — below → unusually cold for a medium hive
+        mean_temp_min: 24.581   # medium p10 — below → unusually cold for a medium hive
+        percent_comfort_max: 0  # medium p10 — NEW: zero comfort time looks like a small hive
       small:
-        std_dev_min: 1.195      # small p10 — below → suspiciously stable for a small hive
+        std_dev_min: 1.047      # small p10 — below → suspiciously stable for a small hive
+        iqr_min: 1.364          # small p10 — NEW: robust companion to std_dev_min
+        mean_temp_max: 28.670   # small p90 — NEW: small hive running too warm is suspicious
 
 decision:
   # Populated once decision rules are defined.

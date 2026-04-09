@@ -50,10 +50,10 @@ the temperature physics actually observed. Flags mismatches.
 Rules applied in priority order (first match wins):
 
   Rule A — FAIL    : predicted=large  but physics look weak
-                     (too volatile, too correlated with ambient, or out of comfort zone)
-  Rule B — WARNING : predicted=medium but hive is running too cold
-  Rule C — WARNING : predicted=small  but hive is suspiciously stable
-                     (could be a sensor error)
+                     (too volatile [std_dev or iqr], too correlated with ambient, or out of comfort zone)
+  Rule B — WARNING : predicted=medium but hive is too cold or never reaches brood zone
+  Rule C — WARNING : predicted=small  but hive is suspiciously stable [std_dev or iqr]
+                     or running too warm — could be a sensor error or under-counted hive
   Default — PASS   : physics align with the prediction
 
 Thresholds are never hardcoded here — they live in:
@@ -234,10 +234,25 @@ def grade(df: pd.DataFrame, thresholds: dict) -> pd.DataFrame:
     Phase 2 — compare predicted hive size against observed temperature physics.
 
     Applies three rules in priority order (first match wins):
-      A  FAIL    — large hive with unstable / ambient-coupled / cold physics
-      B  WARNING — medium hive too cold
-      C  WARNING — small hive suspiciously stable
+      A  FAIL    — large hive with unstable / ambient-coupled / out-of-comfort physics
+      B  WARNING — medium hive too cold or never reaches brood zone
+      C  WARNING — small hive suspiciously stable or running too warm
       D  PASS    — physics align with prediction
+
+    Rule A sub-conditions (any one is sufficient to FAIL):
+      std_dev > large.std_dev_max     — too volatile for a large hive
+      iqr     > large.iqr_max         — robust volatility check (outlier-insensitive)
+      corr    > large.corr_max        — too coupled to ambient weather
+      percent_comfort < large.comfort_min — rarely in brood-rearing band
+
+    Rule B sub-conditions (any one is sufficient to WARNING):
+      mean_temp < medium.mean_temp_min         — too cold for a medium hive
+      percent_comfort <= medium.percent_comfort_max — zero time in brood zone → behaves like small
+
+    Rule C sub-conditions (any one is sufficient to WARNING):
+      std_dev  < small.std_dev_min  — suspiciously stable for a small hive
+      iqr      < small.iqr_min      — robust companion to std_dev check
+      mean_temp > small.mean_temp_max — running too warm for a small hive
 
     Parameters
     ----------
@@ -261,14 +276,23 @@ def grade(df: pd.DataFrame, thresholds: dict) -> pd.DataFrame:
     is_medium = size == "medium"
     is_small  = size == "small"
 
-    # Rule A sub-conditions
+    # Rule A sub-conditions — large hive physics mismatch
     cond_std     = is_large & (df["std_dev"] > large["std_dev_max"])
+    cond_iqr     = is_large & (df["iqr"]     > large["iqr_max"])
     cond_corr    = is_large & corr.notna() & (corr > large["corr_max"])
     cond_comfort = is_large & (df["percent_comfort"] < large["comfort_min"])
-    rule_a = cond_std | cond_corr | cond_comfort
+    rule_a = cond_std | cond_iqr | cond_corr | cond_comfort
 
-    rule_b = is_medium & (df["mean_temp"] < medium["mean_temp_min"])
-    rule_c = is_small  & (df["std_dev"]   < small["std_dev_min"])
+    # Rule B sub-conditions — medium hive too cold or never in brood zone
+    cond_b_temp    = is_medium & (df["mean_temp"] < medium["mean_temp_min"])
+    cond_b_comfort = is_medium & (df["percent_comfort"] <= medium["percent_comfort_max"])
+    rule_b = cond_b_temp | cond_b_comfort
+
+    # Rule C sub-conditions — small hive suspiciously stable or too warm
+    cond_c_std  = is_small & (df["std_dev"]   < small["std_dev_min"])
+    cond_c_iqr  = is_small & (df["iqr"]       < small["iqr_min"])
+    cond_c_temp = is_small & (df["mean_temp"] > small["mean_temp_max"])
+    rule_c = cond_c_std | cond_c_iqr | cond_c_temp
 
     # ── status (vectorized) ─────────────────────────────────────────────────
     status = np.select(
@@ -278,10 +302,13 @@ def grade(df: pd.DataFrame, thresholds: dict) -> pd.DataFrame:
     )
 
     # ── reason strings ──────────────────────────────────────────────────────
-    # Rule A: join whichever sub-conditions fired into one string
+    # Rule A: join whichever sub-conditions fired
     std_part     = np.where(cond_std,
                             "std_dev=" + df["std_dev"].round(2).astype(str)
                             + " > " + str(large["std_dev_max"]), "")
+    iqr_part     = np.where(cond_iqr,
+                            "iqr=" + df["iqr"].round(2).astype(str)
+                            + " > " + str(large["iqr_max"]), "")
     corr_part    = np.where(cond_corr,
                             "corr=" + corr.round(2).astype(str)
                             + " > " + str(large["corr_max"]), "")
@@ -290,21 +317,41 @@ def grade(df: pd.DataFrame, thresholds: dict) -> pd.DataFrame:
                             + "% < " + str(large["comfort_min"]) + "%", "")
 
     fail_detail = (
-        pd.DataFrame({"a": std_part, "b": corr_part, "c": comfort_part})
+        pd.DataFrame({"a": std_part, "b": iqr_part, "c": corr_part, "d": comfort_part})
         .apply(lambda r: "; ".join(v for v in r if v), axis=1)
     )
     reason_a = "Large hive physics mismatch: " + fail_detail
 
-    reason_b = (
-        "Too cold for medium hive: mean_temp="
-        + df["mean_temp"].round(1).astype(str)
-        + "°C < " + str(medium["mean_temp_min"]) + "°C"
+    # Rule B: join whichever sub-conditions fired
+    b_temp_part    = np.where(cond_b_temp,
+                              "mean_temp=" + df["mean_temp"].round(1).astype(str)
+                              + "\u00b0C < " + str(medium["mean_temp_min"]) + "\u00b0C", "")
+    b_comfort_part = np.where(cond_b_comfort,
+                              "comfort=" + df["percent_comfort"].round(1).astype(str)
+                              + "% <= " + str(medium["percent_comfort_max"]) + "% (cold like small)", "")
+
+    medium_detail = (
+        pd.DataFrame({"a": b_temp_part, "b": b_comfort_part})
+        .apply(lambda r: "; ".join(v for v in r if v), axis=1)
     )
-    reason_c = (
-        "Unexpected stability for small hive: std_dev="
-        + df["std_dev"].round(2).astype(str)
-        + " < " + str(small["std_dev_min"])
+    reason_b = "Medium hive physics mismatch: " + medium_detail
+
+    # Rule C: join whichever sub-conditions fired
+    c_std_part  = np.where(cond_c_std,
+                           "std_dev=" + df["std_dev"].round(2).astype(str)
+                           + " < " + str(small["std_dev_min"]), "")
+    c_iqr_part  = np.where(cond_c_iqr,
+                           "iqr=" + df["iqr"].round(2).astype(str)
+                           + " < " + str(small["iqr_min"]), "")
+    c_temp_part = np.where(cond_c_temp,
+                           "mean_temp=" + df["mean_temp"].round(1).astype(str)
+                           + "\u00b0C > " + str(small["mean_temp_max"]) + "\u00b0C (too warm)", "")
+
+    small_detail = (
+        pd.DataFrame({"a": c_std_part, "b": c_iqr_part, "c": c_temp_part})
+        .apply(lambda r: "; ".join(v for v in r if v), axis=1)
     )
+    reason_c = "Small hive physics mismatch: " + small_detail
 
     reason = np.select(
         [rule_a, rule_b, rule_c],
