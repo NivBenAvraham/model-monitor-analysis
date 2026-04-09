@@ -1,24 +1,60 @@
-PHASE 1: FEATURE ENGINEERING — Quantifying the Biological Signatures
+SENSOR GROUP SEGMENT — Layer 1 Specification
+═════════════════════════════════════════════════════════════════════
+
+PURPOSE
+───────
+Per-sensor temperature physics check.
+"Does this sensor's thermal behavior match the model's predicted hive size?"
+Output: PASS / WARNING / FAIL per (sensor, date).
+Consumed by Layer 2 (group_model_temperature_health) to decide VALID / INVALID
+per (group_id, date).
+
+
+═══════════════════════════════════════════════════════════════════════
+PHASE 1: FEATURE ENGINEERING
+═══════════════════════════════════════════════════════════════════════
 
 Data sources:
-- internal_temp  : pcb_temperature_one   → sensor_temperature file
-- ambient_temp   : pcb_temperature_two   → gateway_temperature file
-- hive_size      : hive_size_bucket      → sensor_temperature file ("Large", "Medium", "Small")
+  internal_temp : pcb_temperature_one  → sensor_temperature parquet
+  ambient_temp  : pcb_temperature_two  → gateway_temperature parquet
+  hive_size     : hive_size_bucket     → sensor_temperature parquet
+                  ('small' / 'medium' / 'large', derived from bee_frames)
 
-Unit of computation: per sensor (sensor_mac_address) over all available data in the time window.
+Unit of computation: per (sensor_mac_address, date) — one output row per sensor per day.
+
+─────────────────────────────────────────────────────────────────
+ALIGNMENT STRATEGY — Per-Sensor Local Ambient
+─────────────────────────────────────────────────────────────────
+Sensor and gateway readings land at different timestamps.
+Both are resampled to hourly means, then joined by timestamp.
+
+A sensor can communicate through multiple gateways simultaneously
+(median 3–7 per day in USA groups). Rather than picking one gateway
+(which is arbitrary and biased) or using all gateways in the group
+(which mixes distant microclimates across yards), we:
+
+  1. Identify which gateways each sensor communicated through.
+  2. Aggregate ambient temp from ONLY those gateways (sensor's local neighbors).
+     → ambient_median = median across local gateways per hour  (robust)
+     → ambient_mean   = mean   across local gateways per hour  (sensitive)
+
+The grading pipeline uses ambient_median (robust).
+The full feature table (extract_features.py) outputs both for comparison.
+
+Primary gateway (highest read count) is stored as metadata in gateway_mac_address
+but does NOT affect metric calculations.
 
 ─────────────────────────────────────────────────────────────────
 METRIC 1 — Stability (Variance)
 ─────────────────────────────────────────────────────────────────
 Strong hives maintain a tight temperature range. Weak hives fluctuate.
 
-Compute:
-  std_dev = standard deviation of internal_temp
-  iqr     = Q75(internal_temp) - Q25(internal_temp)
+  std_dev = standard deviation of hourly internal_temp
+  iqr     = Q75(internal_temp) − Q25(internal_temp)  [robust companion]
 
 Expected direction by hive size:
-  Large  → very low std_dev (e.g. σ < 1.5°C) — tight thermal regulation
-  Small  → high std_dev (similar magnitude to ambient fluctuation)
+  Large  → very low std_dev / iqr — tight thermal regulation
+  Small  → high std_dev / iqr — follows ambient fluctuation
   Medium → in between
 
 ─────────────────────────────────────────────────────────────────
@@ -26,8 +62,8 @@ METRIC 2 — Decoupling (Correlation with Ambient)
 ─────────────────────────────────────────────────────────────────
 Weak hives follow the ambient curve; strong hives fight it.
 
-Compute:
-  ambient_correlation = Pearson correlation between internal_temp and ambient_temp
+  ambient_correlation = Pearson r(internal_temp, ambient_median)
+                        (grading uses median ambient — robust to gateway noise)
 
 Expected direction by hive size:
   Large  → r ≈ 0  (hive ignores the weather — thermally independent)
@@ -37,11 +73,10 @@ Expected direction by hive size:
 ─────────────────────────────────────────────────────────────────
 METRIC 3 — Comfort Zone (Brood Temperature Range)
 ─────────────────────────────────────────────────────────────────
-Brood rearing occurs around 34°C–35°C. Strong hives hold this band.
+Brood rearing occurs around 34–35°C. Strong hives hold this band.
 
-Compute:
-  mean_temp       = mean of internal_temp
-  percent_comfort = % of readings where internal_temp ∈ [32°C, 36°C] (inclusive)
+  mean_temp       = mean of hourly internal_temp
+  percent_comfort = % of hours where internal_temp ∈ [32°C, 36°C]
 
 Expected direction by hive size:
   Large  → percent_comfort near 100%, mean_temp ≈ 34–35°C
@@ -49,48 +84,61 @@ Expected direction by hive size:
   Small  → significantly lower percent_comfort, mean_temp drifts with ambient
 
 ─────────────────────────────────────────────────────────────────
-OUTPUT COLUMNS (per sensor per group per date window)
+COMPUTE() OUTPUT COLUMNS (lean grading features)
 ─────────────────────────────────────────────────────────────────
-  group_id, date, sensor_mac_address, hive_size_bucket,
+Used by run.py for grading:
+  group_id, date, sensor_mac_address, gateway_mac_address, hive_size_bucket,
   std_dev, iqr, ambient_correlation,
-  mean_temp, percent_comfort
+  mean_temp, percent_comfort, n_readings
+
+EXTRACT_FEATURES() OUTPUT COLUMNS (full feature table for EDA/calibration)
+─────────────────────────────────────────────────────────────────
+Used by extract_features.py — adds internal temp distribution + both correlations:
+  group_id, date, sensor_mac_address, gateway_mac_address, hive_size_bucket,
+  std_dev, iqr,
+  ambient_corr_median, ambient_corr_mean,
+  min_temp, mean_temp, max_temp, median_temp,
+  percent_comfort, n_readings
 
 
-═══════════════════════════════════════════════════════════════════
-PHASE 2: THE GRADER — Predicted Class vs. Observed Physics
-═══════════════════════════════════════════════════════════════════
+═══════════════════════════════════════════════════════════════════════
+PHASE 2: GRADING — Predicted Class vs. Observed Physics
+═══════════════════════════════════════════════════════════════════════
 
-For each sensor, compare what the model predicted (hive_size_bucket)
+For each sensor, compare the model's prediction (hive_size_bucket)
 against what the temperature physics actually shows.
 
-Thresholds are derived from Phase 1 percentile distributions on real data.
-All thresholds live in skills/sensor_group_segment/config/thresholds.yaml — never hardcode numbers here.
+Rules are applied in priority order (first match wins).
+All thresholds live in skills/sensor_group_segment/config/thresholds.yaml.
 
 ─────────────────────────────────────────────────────────────────
 RULE A — Large Hive Misbehaving  →  status: FAIL
 ─────────────────────────────────────────────────────────────────
 IF predicted == "large"
-AND (std_dev > std_dev_large_max      # sensor is too volatile for a large hive
-     OR ambient_correlation > corr_large_max   # sensor follows ambient like a weak hive
-     OR percent_comfort < comfort_large_min)   # not holding brood temperature
+AND (std_dev > large.std_dev_max              # too volatile for a large hive
+     OR iqr > large.iqr_max                  # robust volatility check
+     OR ambient_correlation > large.corr_max  # follows ambient like a weak hive
+     OR percent_comfort < large.comfort_min)  # not holding brood temperature
 THEN status = FAIL
-     reason = which condition(s) fired
+     reason = which condition(s) fired (joined with "; ")
 
 ─────────────────────────────────────────────────────────────────
 RULE B — Medium Hive Too Cold  →  status: WARNING
 ─────────────────────────────────────────────────────────────────
 IF predicted == "medium"
-AND mean_temp < mean_temp_medium_min   # hive struggling to maintain heat
+AND mean_temp < medium.mean_temp_min         # hive struggling to maintain heat
 THEN status = WARNING
-     reason = "Too cold for medium hive"
+     reason = "Too cold for medium hive: mean_temp=X°C < Y°C"
 
 ─────────────────────────────────────────────────────────────────
-RULE C — Small Hive Suspiciously Stable  →  status: WARNING
+RULE C — Small Hive Misbehaving  →  status: WARNING
 ─────────────────────────────────────────────────────────────────
 IF predicted == "small"
-AND std_dev < std_dev_small_min        # small hive should not be this stable
+AND (std_dev < small.std_dev_min             # suspiciously stable — likely sensor error
+     OR iqr < small.iqr_min                 # robust companion check
+     OR mean_temp > small.mean_temp_max)    # running too warm — likely under-counted hive
 THEN status = WARNING
-     reason = "Unexpected stability — possible sensor error"
+     reason = which condition(s) fired (joined with "; ")
 
 ─────────────────────────────────────────────────────────────────
 DEFAULT RULE  →  status: PASS
@@ -100,25 +148,45 @@ THEN status = PASS
      reason = "Physics align with prediction"
 
 ─────────────────────────────────────────────────────────────────
-THRESHOLD REFERENCE  (initial values — derived from Phase 1 data)
+THRESHOLD REFERENCE  (see thresholds.yaml for current values)
 ─────────────────────────────────────────────────────────────────
-Initial reference values (groups 491, 518, 625, 790) — superseded by calibrate_thresholds.py output:
+Calibrated from train samples using p90 (MAX rules) / p10 (MIN rules)
+of each hive size's own physical distribution.
+Target: hive_size_bucket (NOT valid/invalid labels — Layer 1 is physics-based).
 
-  Large hive observed:
-    std_dev    → mean=0.26, 90th pct=0.46   → max threshold: 0.75  (above 90th pct = suspicious)
-    corr       → mean=-0.02, 90th pct=0.50  → max threshold: 0.60
-    comfort    → mean=96%, 10th pct=100%    → min threshold: 75%
-
-  Medium hive observed:
-    mean_temp  → mean=29.1, 10th pct=23.7   → min threshold: 22.0
-
-  Small hive observed:
-    std_dev    → mean=2.48, 10th pct=1.17   → min threshold: 0.80
+See: skills/sensor_group_segment/scripts/calibrate_thresholds.py
+See: data/calibration/calibration_report.csv
 
 ─────────────────────────────────────────────────────────────────
-OUTPUT COLUMNS (per sensor per group per date — appended to Phase 1)
+GRADE() OUTPUT COLUMNS (appended to compute() output)
 ─────────────────────────────────────────────────────────────────
-  group_id, date, sensor_mac_address, hive_size_bucket,
-  std_dev, iqr, ambient_correlation, mean_temp, percent_comfort,
+  ...all compute() columns...,
   status,   # PASS | WARNING | FAIL
   reason    # which rule fired, or "Physics align with prediction"
+
+
+═══════════════════════════════════════════════════════════════════════
+SCRIPTS
+═══════════════════════════════════════════════════════════════════════
+
+  pull_samples.py        Pull Athena data → data/samples/temperature-export/
+  create_split.py        Create train/test symlinks from ground truth labels
+  run.py                 Phase 1 + Phase 2 on train split → data/results/<run>/
+  extract_features.py    Phase 1 full feature table on any split → data/features/
+  calibrate_thresholds.py  Derive thresholds from train distributions
+
+
+═══════════════════════════════════════════════════════════════════════
+DATA PATHS
+═══════════════════════════════════════════════════════════════════════
+
+  data/samples/temperature-export/group_{id}/{date}/    raw parquets (never touch)
+  data/samples/temperature-export/train/                symlinks to train set
+  data/samples/temperature-export/test/                 symlinks to test set  (never touch for training)
+  data/samples/split_manifest.csv                       split traceability
+
+  data/results/<dated run>/results.parquet              grading output (all train groups)
+  data/features/sensor_group_segment/train_features.parquet  full feature table
+
+  ground_truth/ground_truth_statuess_ca_2026.csv        shared ground truth (Layer 1 + 2)
+  skills/sensor_group_segment/config/thresholds.yaml    all grading thresholds

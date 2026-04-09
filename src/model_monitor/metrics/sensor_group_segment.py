@@ -7,24 +7,8 @@ Operates at the individual sensor level — each sensor is a data point.
 ════════════════════════════════════════════════════════════════════
 PHASE 1 — compute()
 ════════════════════════════════════════════════════════════════════
-Translates raw temperature readings into three biological signatures
-per sensor per day. The idea: a strong hive thermally regulates
-itself regardless of outside weather; a weak hive can't.
-
-  Metric 1 — Stability (std_dev, iqr)
-    How much does the internal temperature fluctuate?
-    Large hive → tight, low variance.  Small hive → noisy, high variance.
-
-  Metric 2 — Decoupling (ambient_corr_median, ambient_corr_mean)
-    Does the hive temperature follow the outside weather curve?
-    Large hive → r ≈ 0 (independent).  Small hive → r → 1 (slave to ambient).
-    Ambient reference = per-sensor local composite (median / mean across only
-    the gateways that sensor communicated through) — handles groups that span
-    multiple yards without mixing distant gateways' weather.
-
-  Metric 3 — Comfort Zone (mean_temp, percent_comfort)
-    How often is the hive in the brood-rearing band [32°C, 36°C]?
-    Large hive → ≈ 100%.  Small hive → rarely hits this range.
+Produces only the features used by the grading thresholds (Lean 5):
+  std_dev, iqr, ambient_correlation, mean_temp, percent_comfort
 
 Data flow:
   sensor_temperature parquet  →  pcb_temperature_one  (internal temp)
@@ -32,43 +16,32 @@ Data flow:
                                  gateway_mac_address   (join key to gateway)
   gateway_temperature parquet →  pcb_temperature_two  (ambient temp)
 
-  Both files are resampled to 1-hour means. For each sensor, ambient temp
-  is aggregated (median + mean) from only the gateways that sensor actually
-  communicated through — its local neighborhood, not the whole group.
+Both are resampled to 1-hour means. Ambient temp is the median across
+only the gateways each sensor communicated through (local reference).
 
 Output of compute(): one row per (group_id, date, sensor_mac_address) with:
-  gateway_mac_address (primary, metadata only),
-  std_dev, iqr, ambient_corr_median, ambient_corr_mean,
-  min_temp, mean_temp, max_temp, median_temp, percent_comfort, n_readings
+  group_id, date, sensor_mac_address, gateway_mac_address, hive_size_bucket,
+  std_dev, iqr, ambient_correlation, mean_temp, percent_comfort, n_readings
+
+For the full 10-metric feature set (adds ambient_corr_mean, min_temp,
+max_temp, median_temp).
 
 ════════════════════════════════════════════════════════════════════
 PHASE 2 — grade()
 ════════════════════════════════════════════════════════════════════
-Compares what the model predicted (hive_size_bucket) against what
-the temperature physics actually observed. Flags mismatches.
+Compares predicted hive_size_bucket against observed temperature physics.
+Output: PASS (physics match prediction) or FAIL (mismatch detected).
 
-Rules applied in priority order (first match wins):
+Rules (first match wins):
+  Rule A — FAIL : predicted=large  but physics look weak
+  Rule B — FAIL : predicted=medium but hive is too cold
+  Rule C — FAIL : predicted=small  but hive is suspiciously stable or warm
+  Default — PASS
 
-  Rule A — FAIL    : predicted=large  but physics look weak
-                     (too volatile [std_dev or iqr], too correlated with ambient, or out of comfort zone)
-  Rule B — WARNING : predicted=medium but hive is too cold or never reaches brood zone
-  Rule C — WARNING : predicted=small  but hive is suspiciously stable [std_dev or iqr]
-                     or running too warm — could be a sensor error or under-counted hive
-  Default — PASS   : physics align with the prediction
-
-Thresholds are never hardcoded here — they live in:
+Thresholds live in:
   skills/sensor_group_segment/config/thresholds.yaml → metrics.sensor_group_segment.grading
 
-Threshold values are calibrated from sensor physics distributions per hive size.
-See: skills/sensor_group_segment/scripts/calibrate_thresholds.py
-
-Output of grade(): same DataFrame as compute() plus two columns:
-  status  — PASS | WARNING | FAIL
-  reason  — human-readable explanation of which rule fired
-
-The per-sensor status output is consumed by Layer 2
-(group_model_temperature_health) which aggregates across sensors
-to decide VALID / INVALID per (group_id, date).
+Output of grade(): same DataFrame + status (PASS|FAIL) + reason.
 """
 
 from __future__ import annotations
@@ -160,12 +133,13 @@ def _align(sensor_df: pd.DataFrame, gateway_df: pd.DataFrame, freq: str) -> pd.D
     # For each sensor, get all its gateways' hourly ambient readings
     local_ambient = sg_map.merge(gateway_h, on="gateway_mac_address", how="inner")
 
-    # Aggregate to per-sensor per-hour: median + mean across local gateways
+    # Aggregate to per-sensor per-hour: median across local gateways (robust)
     local_agg = (
         local_ambient
         .groupby(["sensor_mac_address", "timestamp"])["ambient_temp"]
-        .agg(ambient_median="median", ambient_mean="mean")
+        .median()
         .reset_index()
+        .rename(columns={"ambient_temp": "ambient_median"})
     )
 
     return sensor_h.merge(local_agg, on=["sensor_mac_address", "timestamp"], how="inner")
@@ -188,36 +162,25 @@ def _stability(internal: pd.Series) -> dict[str, float]:
     }
 
 
-def _decoupling(internal: pd.Series, ambient_median: pd.Series,
-                 ambient_mean: pd.Series) -> dict[str, float]:
+def _decoupling(internal: pd.Series, ambient_median: pd.Series) -> dict[str, float]:
     """Metric 2 — does internal temp move with outside weather?
-    r ≈ 0 → hive is thermally independent (strong).
-    r → 1 → hive follows ambient curve (weak).
-
-    Computes against both yard-level ambient references so we can compare:
-      ambient_corr_median — correlation with median-across-gateways (robust)
-      ambient_corr_mean   — correlation with mean-across-gateways  (sensitive)
+    r ≈ 0 → thermally independent (strong).  r → 1 → follows ambient (weak).
+    Uses median-across-local-gateways as ambient reference (robust to outlier gateways).
     Returns NaN if fewer than MIN_READINGS or constant ambient."""
     if len(internal) < MIN_READINGS:
-        return {"ambient_corr_median": float("nan"),
-                "ambient_corr_mean":   float("nan")}
+        return {"ambient_correlation": float("nan")}
     with np.errstate(invalid="ignore"):
-        r_med, _ = stats.pearsonr(internal, ambient_median)
-        r_mean, _ = stats.pearsonr(internal, ambient_mean)
-    return {"ambient_corr_median": float(r_med),
-            "ambient_corr_mean":   float(r_mean)}
+        r, _ = stats.pearsonr(internal, ambient_median)
+    return {"ambient_correlation": float(r)}
 
 
 def _comfort_zone(internal: pd.Series) -> dict[str, float]:
-    """Metric 3 — how often is the hive in the brood-rearing band?
-    min/mean/max/median_temp: distribution of raw internal temperature.
-    percent_comfort: % of hours in [32°C, 36°C]. Large hives → ≈ 100%."""
+    """Metric 3 — brood-rearing band presence.
+    mean_temp: average internal temperature.
+    percent_comfort: % of hours in [32°C, 36°C]."""
     in_zone = (internal >= COMFORT_LOW) & (internal <= COMFORT_HIGH)
     return {
-        "min_temp":        float(internal.min()),
         "mean_temp":       float(internal.mean()),
-        "max_temp":        float(internal.max()),
-        "median_temp":     float(internal.median()),
         "percent_comfort": float(in_zone.mean() * 100),
     }
 
@@ -233,125 +196,91 @@ def grade(df: pd.DataFrame, thresholds: dict) -> pd.DataFrame:
     """
     Phase 2 — compare predicted hive size against observed temperature physics.
 
-    Applies three rules in priority order (first match wins):
-      A  FAIL    — large hive with unstable / ambient-coupled / out-of-comfort physics
-      B  WARNING — medium hive too cold or never reaches brood zone
-      C  WARNING — small hive suspiciously stable or running too warm
-      D  PASS    — physics align with prediction
-
-    Rule A sub-conditions (any one is sufficient to FAIL):
-      std_dev > large.std_dev_max     — too volatile for a large hive
-      iqr     > large.iqr_max         — robust volatility check (outlier-insensitive)
-      corr    > large.corr_max        — too coupled to ambient weather
-      percent_comfort < large.comfort_min — rarely in brood-rearing band
-
-    Rule B sub-conditions (any one is sufficient to WARNING):
-      mean_temp < medium.mean_temp_min         — too cold for a medium hive
-      percent_comfort <= medium.percent_comfort_max — zero time in brood zone → behaves like small
-
-    Rule C sub-conditions (any one is sufficient to WARNING):
-      std_dev  < small.std_dev_min  — suspiciously stable for a small hive
-      iqr      < small.iqr_min      — robust companion to std_dev check
-      mean_temp > small.mean_temp_max — running too warm for a small hive
+    Rules (first match wins → FAIL, otherwise PASS):
+      A — large  hive with weak physics (volatile, coupled, or cold)
+      B — medium hive too cold
+      C — small  hive too stable or too warm
 
     Parameters
     ----------
     df         : output of compute() — one row per (date, sensor_mac_address)
-    thresholds : dict loaded from skills/sensor_group_segment/config/thresholds.yaml
-                 → metrics.sensor_group_segment.grading
+    thresholds : grading dict from thresholds.yaml
 
     Returns
     -------
-    Same DataFrame with two new columns: status, reason
+    Same DataFrame + status (PASS|FAIL) + reason
     """
     large  = thresholds["large"]
     medium = thresholds["medium"]
     small  = thresholds["small"]
 
     size = df["hive_size_bucket"].str.lower()
-    corr = df["ambient_corr_median"]  # grading uses the robust yard-level median
+    corr = df["ambient_correlation"]
 
-    # ── boolean masks (vectorized) ──────────────────────────────────────────
     is_large  = size == "large"
     is_medium = size == "medium"
     is_small  = size == "small"
 
-    # Rule A sub-conditions — large hive physics mismatch
+    # Rule A — large hive physics mismatch
     cond_std     = is_large & (df["std_dev"] > large["std_dev_max"])
     cond_iqr     = is_large & (df["iqr"]     > large["iqr_max"])
     cond_corr    = is_large & corr.notna() & (corr > large["corr_max"])
     cond_comfort = is_large & (df["percent_comfort"] < large["comfort_min"])
     rule_a = cond_std | cond_iqr | cond_corr | cond_comfort
 
-    # Rule B sub-conditions — medium hive too cold or never in brood zone
-    cond_b_temp    = is_medium & (df["mean_temp"] < medium["mean_temp_min"])
-    cond_b_comfort = is_medium & (df["percent_comfort"] <= medium["percent_comfort_max"])
-    rule_b = cond_b_temp | cond_b_comfort
+    # Rule B — medium hive too cold
+    rule_b = is_medium & (df["mean_temp"] < medium["mean_temp_min"])
 
-    # Rule C sub-conditions — small hive suspiciously stable or too warm
+    # Rule C — small hive too stable or too warm
     cond_c_std  = is_small & (df["std_dev"]   < small["std_dev_min"])
     cond_c_iqr  = is_small & (df["iqr"]       < small["iqr_min"])
     cond_c_temp = is_small & (df["mean_temp"] > small["mean_temp_max"])
     rule_c = cond_c_std | cond_c_iqr | cond_c_temp
 
-    # ── status (vectorized) ─────────────────────────────────────────────────
-    status = np.select(
-        [rule_a, rule_b, rule_c],
-        ["FAIL", "WARNING", "WARNING"],
-        default="PASS",
-    )
+    any_fail = rule_a | rule_b | rule_c
+    status = np.where(any_fail, "FAIL", "PASS")
 
     # ── reason strings ──────────────────────────────────────────────────────
-    # Rule A: join whichever sub-conditions fired
     std_part     = np.where(cond_std,
                             "std_dev=" + df["std_dev"].round(2).astype(str)
-                            + " > " + str(large["std_dev_max"]), "")
+                            + ">" + str(large["std_dev_max"]), "")
     iqr_part     = np.where(cond_iqr,
                             "iqr=" + df["iqr"].round(2).astype(str)
-                            + " > " + str(large["iqr_max"]), "")
+                            + ">" + str(large["iqr_max"]), "")
     corr_part    = np.where(cond_corr,
                             "corr=" + corr.round(2).astype(str)
-                            + " > " + str(large["corr_max"]), "")
+                            + ">" + str(large["corr_max"]), "")
     comfort_part = np.where(cond_comfort,
                             "comfort=" + df["percent_comfort"].round(1).astype(str)
-                            + "% < " + str(large["comfort_min"]) + "%", "")
+                            + "%<" + str(large["comfort_min"]) + "%", "")
 
-    fail_detail = (
+    fail_a = (
         pd.DataFrame({"a": std_part, "b": iqr_part, "c": corr_part, "d": comfort_part})
         .apply(lambda r: "; ".join(v for v in r if v), axis=1)
     )
-    reason_a = "Large hive physics mismatch: " + fail_detail
+    reason_a = "Large mismatch: " + fail_a
 
-    # Rule B: join whichever sub-conditions fired
-    b_temp_part    = np.where(cond_b_temp,
-                              "mean_temp=" + df["mean_temp"].round(1).astype(str)
-                              + "\u00b0C < " + str(medium["mean_temp_min"]) + "\u00b0C", "")
-    b_comfort_part = np.where(cond_b_comfort,
-                              "comfort=" + df["percent_comfort"].round(1).astype(str)
-                              + "% <= " + str(medium["percent_comfort_max"]) + "% (cold like small)", "")
-
-    medium_detail = (
-        pd.DataFrame({"a": b_temp_part, "b": b_comfort_part})
-        .apply(lambda r: "; ".join(v for v in r if v), axis=1)
+    reason_b = (
+        "Medium too cold: mean_temp="
+        + df["mean_temp"].round(1).astype(str)
+        + "<" + str(medium["mean_temp_min"])
     )
-    reason_b = "Medium hive physics mismatch: " + medium_detail
 
-    # Rule C: join whichever sub-conditions fired
     c_std_part  = np.where(cond_c_std,
                            "std_dev=" + df["std_dev"].round(2).astype(str)
-                           + " < " + str(small["std_dev_min"]), "")
+                           + "<" + str(small["std_dev_min"]), "")
     c_iqr_part  = np.where(cond_c_iqr,
                            "iqr=" + df["iqr"].round(2).astype(str)
-                           + " < " + str(small["iqr_min"]), "")
+                           + "<" + str(small["iqr_min"]), "")
     c_temp_part = np.where(cond_c_temp,
                            "mean_temp=" + df["mean_temp"].round(1).astype(str)
-                           + "\u00b0C > " + str(small["mean_temp_max"]) + "\u00b0C (too warm)", "")
+                           + ">" + str(small["mean_temp_max"]), "")
 
-    small_detail = (
+    fail_c = (
         pd.DataFrame({"a": c_std_part, "b": c_iqr_part, "c": c_temp_part})
         .apply(lambda r: "; ".join(v for v in r if v), axis=1)
     )
-    reason_c = "Small hive physics mismatch: " + small_detail
+    reason_c = "Small mismatch: " + fail_c
 
     reason = np.select(
         [rule_a, rule_b, rule_c],
@@ -369,18 +298,14 @@ def compute(sensor_df: pd.DataFrame, gateway_df: pd.DataFrame, date: str) -> pd.
     """
     Phase 1 feature engineering — one row per (date, sensor_mac_address).
 
-    Parameters
-    ----------
-    sensor_df  : sensor_temperature parquet for one (group, date)
-    gateway_df : gateway_temperature parquet for one (group, date)
-    date       : ISO date string (YYYY-MM-DD) used to tag the output rows
+    Produces only the Lean 5 features used by grade() thresholds.
+    For bulk extraction across all samples see skills/sensor_group_segment/scripts/extract_features.py.
 
     Returns
     -------
     DataFrame with columns:
         group_id, date, sensor_mac_address, gateway_mac_address, hive_size_bucket,
-        std_dev, iqr, ambient_corr_median, ambient_corr_mean,
-        min_temp, mean_temp, max_temp, median_temp, percent_comfort, n_readings
+        std_dev, iqr, ambient_correlation, mean_temp, percent_comfort, n_readings
     """
     aligned = _align(sensor_df, gateway_df, RESAMPLE_FREQ)
 
@@ -392,7 +317,7 @@ def compute(sensor_df: pd.DataFrame, gateway_df: pd.DataFrame, date: str) -> pd.
     records: list[dict] = []
 
     for sensor_mac, grp in aligned.groupby("sensor_mac_address"):
-        both = grp[["internal_temp", "ambient_median", "ambient_mean"]].dropna()
+        both = grp[["internal_temp", "ambient_median"]].dropna()
         if len(both) < MIN_READINGS:
             log.debug(f"  skip {sensor_mac}: only {len(both)} aligned hours")
             continue
@@ -403,8 +328,7 @@ def compute(sensor_df: pd.DataFrame, gateway_df: pd.DataFrame, date: str) -> pd.
             "n_readings":          len(both),
         }
         row.update(_stability(both["internal_temp"]))
-        row.update(_decoupling(both["internal_temp"],
-                               both["ambient_median"], both["ambient_mean"]))
+        row.update(_decoupling(both["internal_temp"], both["ambient_median"]))
         row.update(_comfort_zone(both["internal_temp"]))
         records.append(row)
 
@@ -416,7 +340,6 @@ def compute(sensor_df: pd.DataFrame, gateway_df: pd.DataFrame, date: str) -> pd.
 
     ordered_cols = [
         "group_id", "date", "sensor_mac_address", "gateway_mac_address", "hive_size_bucket",
-        "std_dev", "iqr", "ambient_corr_median", "ambient_corr_mean",
-        "min_temp", "mean_temp", "max_temp", "median_temp", "percent_comfort", "n_readings",
+        "std_dev", "iqr", "ambient_correlation", "mean_temp", "percent_comfort", "n_readings",
     ]
     return result[ordered_cols].sort_values(["group_id", "date", "sensor_mac_address"]).reset_index(drop=True)

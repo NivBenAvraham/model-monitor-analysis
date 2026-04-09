@@ -8,11 +8,14 @@ features across all sensors with that label. Thresholds are then set at
 the tail of each size's distribution — a sensor is flagged when its
 physics are unusual *for its own predicted size class*.
 
-  large.std_dev_max  → above large p90: unusually volatile for a large hive
-  large.corr_max     → above large p90: unusually coupled to ambient for a large hive
-  large.comfort_min  → below large p10: unusually out of brood zone for a large hive
+  large.std_dev_max    → above large p90: unusually volatile for a large hive
+  large.iqr_max        → above large p90: robust volatility check
+  large.corr_max       → above large p90: unusually coupled to ambient for a large hive
+  large.comfort_min    → below large p10: unusually out of brood zone for a large hive
   medium.mean_temp_min → below medium p10: unusually cold for a medium hive
-  small.std_dev_min  → below small p10: suspiciously stable for a small hive
+  small.std_dev_min    → below small p10: suspiciously stable for a small hive
+  small.iqr_min        → below small p10: robust companion to std_dev check
+  small.mean_temp_max  → above small p90: running too warm — likely under-counted hive
 
 This is pure Layer 1 calibration — no valid/invalid ground truth labels needed.
 
@@ -32,6 +35,7 @@ Outputs:
 
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 from pathlib import Path
@@ -44,9 +48,10 @@ REPO_ROOT  = Path(__file__).resolve().parents[3]   # repo root
 sys.path.insert(0, str(REPO_ROOT / "src"))
 sys.path.insert(0, str(SKILL_ROOT))
 
-TRAIN_DIR   = REPO_ROOT / "data/samples/train"
-OUTPUT_DIR  = REPO_ROOT / "data/calibration"
+TRAIN_DIR        = REPO_ROOT / "data/samples/train"
+OUTPUT_DIR       = REPO_ROOT / "data/calibration"
 FEATURES_PARQUET = OUTPUT_DIR / "train_features.parquet"
+GROUND_TRUTH     = REPO_ROOT / "ground_truth/ground_truth_statuess_ca_2026.csv"
 
 METRICS     = ["std_dev", "iqr", "ambient_correlation", "mean_temp", "percent_comfort"]
 PERCENTILES = [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95]
@@ -176,12 +181,15 @@ def suggest_thresholds(features: pd.DataFrame) -> dict:
     return {
         # large: physics should look like a strong, thermally stable hive
         "large.std_dev_max":    q("large", "std_dev",              0.90),
+        "large.iqr_max":        q("large", "iqr",                  0.90),
         "large.corr_max":       q("large", "ambient_correlation",  0.90),
         "large.comfort_min":    q("large", "percent_comfort",      0.10),
         # medium: should be warmer than ambient-dominated hives
         "medium.mean_temp_min": q("medium", "mean_temp",           0.10),
-        # small: should be noisy — suspiciously stable means possible sensor error
+        # small: should be noisy — suspiciously stable or too warm means mislabel
         "small.std_dev_min":    q("small", "std_dev",              0.10),
+        "small.iqr_min":        q("small", "iqr",                  0.10),
+        "small.mean_temp_max":  q("small", "mean_temp",            0.90),
     }
 
 
@@ -217,10 +225,13 @@ def print_report(distributions: pd.DataFrame, suggestions: dict, features: pd.Da
 
     rule_explanations = {
         "large.std_dev_max":    "large p90 std_dev  — above this → unusually volatile for large",
+        "large.iqr_max":        "large p90 iqr      — above this → robust volatility check",
         "large.corr_max":       "large p90 corr     — above this → unusually ambient-coupled for large",
         "large.comfort_min":    "large p10 comfort  — below this → unusually out of brood zone for large",
         "medium.mean_temp_min": "medium p10 mean_temp — below this → unusually cold for medium",
         "small.std_dev_min":    "small p10 std_dev  — below this → suspiciously stable for small",
+        "small.iqr_min":        "small p10 iqr      — below this → robust companion to std_dev",
+        "small.mean_temp_max":  "small p90 mean_temp — above this → running too warm for small",
     }
     for rule, value in suggestions.items():
         print(f"  {rule:<26}  →  {str(value):>7}    # {rule_explanations.get(rule, '')}")
@@ -235,10 +246,13 @@ def print_report(distributions: pd.DataFrame, suggestions: dict, features: pd.Da
         print("-" * 62)
         mapping = {
             "large.std_dev_max":    ("large",  "std_dev_max"),
+            "large.iqr_max":        ("large",  "iqr_max"),
             "large.corr_max":       ("large",  "corr_max"),
             "large.comfort_min":    ("large",  "comfort_min"),
             "medium.mean_temp_min": ("medium", "mean_temp_min"),
             "small.std_dev_min":    ("small",  "std_dev_min"),
+            "small.iqr_min":        ("small",  "iqr_min"),
+            "small.mean_temp_max":  ("small",  "mean_temp_max"),
         }
         for rule, (size, key) in mapping.items():
             cur = current.get(size, {}).get(key)
@@ -256,18 +270,62 @@ def print_report(distributions: pd.DataFrame, suggestions: dict, features: pd.Da
 
 
 # ---------------------------------------------------------------------------
+# Valid-only filter
+# ---------------------------------------------------------------------------
+
+def filter_valid_only(features: pd.DataFrame) -> pd.DataFrame:
+    """Keep only sensor-day rows whose (group_id, date) pair has group_status == 'valid'."""
+    gt = pd.read_csv(GROUND_TRUTH)
+    gt["date"] = pd.to_datetime(gt["date"]).dt.date
+    valid_pairs = set(
+        zip(gt.loc[gt["status"] == "valid", "group_id"],
+            gt.loc[gt["status"] == "valid", "date"])
+    )
+    features = features.copy()
+    features["_date"] = pd.to_datetime(features["date"]).dt.date
+    mask = [
+        (int(gid), d) in valid_pairs
+        for gid, d in zip(features["group_id"], features["_date"])
+    ]
+    result = features[mask].drop(columns="_date").reset_index(drop=True)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Calibrate Layer 1 grading thresholds from p90/p10 feature distributions."
+    )
+    p.add_argument(
+        "--valid-only",
+        action="store_true",
+        help="Filter to (group_id, date) pairs with group_status == 'valid' in ground truth.",
+    )
+    return p.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     features = load_features()
 
+    if args.valid_only:
+        n_before = len(features)
+        features = filter_valid_only(features)
+        log.info(
+            f"Filtered to valid groups only: {n_before:,} → {len(features):,} rows "
+            f"({features['group_id'].nunique()} groups, {features['date'].nunique()} dates)"
+        )
+
     log.info("Computing distributions per hive_size_bucket…")
     distributions = compute_distributions(features)
 
-    dist_path = OUTPUT_DIR / "calibration_report.csv"
+    suffix = "_valid_only" if args.valid_only else ""
+    dist_path = OUTPUT_DIR / f"calibration_report{suffix}.csv"
     distributions.to_csv(dist_path, index=False)
     log.info(f"Saved calibration report → {dist_path}")
 

@@ -54,7 +54,7 @@ group_id  (beekeeper)
 ETL is handled by `temperature_data_export_package` (read-only, from `beehero-streamlit-app`).
 Functions used: `load_sensor_samples()`, `load_gateway_samples()`, `add_hive_size_bucket()`.
 
-Local samples are stored under `data/samples/group_{id}/{date}/` as Parquet files.
+Local samples are stored under `data/samples/temperature-export/group_{id}/{date}/` as Parquet files.
 
 #### Sensor samples (`{id}_{date}_sensor_temperature.parquet`)
 
@@ -103,7 +103,7 @@ The FROM table depends on the query date — always use the helper, never hardco
 
 ---
 
-### 3. Ground Truth (`data/temp_ground_truth/ground_truth_statuess_ca_2026.csv`)
+### 3. Ground Truth (`ground_truth/ground_truth_statuess_ca_2026.csv`)
 
 Human-labelled model status per group per date. Source for `extraction_plan.py`.
 
@@ -179,43 +179,57 @@ Raw sensor data (per sensor, per group, per date)
 
 | Phase | Function | File |
 |-------|----------|------|
-| Phase 1 — Feature Engineering | `compute()` | `src/model_monitor/metrics/sensor_group_segment.py` |
+| Phase 1 — Feature Engineering (lean, grading) | `compute()` | `src/model_monitor/metrics/sensor_group_segment.py` |
+| Phase 1 — Feature Engineering (full, EDA) | `compute_full()` | `skills/sensor_group_segment/scripts/extract_features.py` |
 | Phase 2 — Grading | `grade()` | `src/model_monitor/metrics/sensor_group_segment.py` |
 
 Thresholds: `skills/sensor_group_segment/config/thresholds.yaml` → `metrics.sensor_group_segment.grading`
 
 Output per sensor: `PASS` / `WARNING` / `FAIL` + `reason` string.
 
+**Ambient correlation** uses per-sensor local gateways (only gateways that sensor communicated
+through), not all gateways in the group — avoids mixing distant microclimates within a group_id.
+
 ### Results Layout
 
 ```
-data/results/sensor_group_segment/group_{id}/{date}/
-    {id}_{date}_sensor_group_segment.parquet          ← per-sensor results
-    {id}_{date}_sensor_group_segment_summary.parquet  ← mean metrics + grade counts per hive_size
-data/results/sensor_group_segment/results.parquet     ← all groups/dates combined
+data/samples/temperature-export/group_{id}/{date}/     ← raw parquets
+data/samples/temperature-export/train/                 ← train symlinks
+data/samples/temperature-export/test/                  ← test symlinks (never use for training)
+data/samples/split_manifest.csv                        ← split traceability
+
+data/results/<dated run>/results.parquet               ← grading output (all train groups)
+data/features/sensor_group_segment/train_features.parquet  ← full feature table for EDA
 ```
 
 ### Skill Layout (`skills/sensor_group_segment/`)
 
 ```
 skills/sensor_group_segment/
-  spec/spec.txt               ← source of truth: logic, rules, thresholds rationale
-  config/thresholds.yaml      ← all grading thresholds (never hardcode in code)
-  config/extraction_plan.py   ← 51 groups, 643 dates, model names
-  config/split_config.py      ← train/test split config (75/25, valid+invalid only)
-  scripts/pull_samples.py     ← Step 1: Athena → local Parquet
-  scripts/run.py              ← Step 2: compute + grade → result Parquet
-  scripts/calibrate_thresholds.py ← calibrate thresholds from sensor physics
-  scripts/create_split.py     ← create train/test symlinks + manifest
-  notebooks/exploration.ipynb ← interactive data exploration
+  spec/spec.txt                  ← source of truth: logic, rules, thresholds rationale
+  config/thresholds.yaml         ← all grading thresholds (never hardcode in code)
+  config/extraction_plan.py      ← 51 groups, 643 dates, model names
+  config/split_config.py         ← train/test split config (75/25, valid+invalid only)
+  scripts/pull_samples.py        ← Step 1: Athena → local Parquet
+  scripts/create_split.py        ← Step 2: create train/test symlinks + manifest
+  scripts/run.py                 ← Step 3: compute + grade on train → results/<dated run>/
+  scripts/extract_features.py    ← Step 4 (optional): full feature table for EDA/calibration
+  scripts/calibrate_thresholds.py ← Step 5 (optional): calibrate thresholds from train distributions
+  notebooks/                     ← interactive data exploration
 ```
 
 **Run order:**
 ```bash
 source scripts/refresh_aws_credentials.sh
+source .venv/bin/activate
+
 nohup python skills/sensor_group_segment/scripts/pull_samples.py > pull_log.txt 2>&1 &
 python skills/sensor_group_segment/scripts/create_split.py
-python skills/sensor_group_segment/scripts/run.py
+python skills/sensor_group_segment/scripts/run.py --output "data/results/$(date +%Y-%m-%d) sensor grp segment"
+
+# optional — full features for EDA / calibration
+python skills/sensor_group_segment/scripts/extract_features.py --split train
+python skills/sensor_group_segment/scripts/calibrate_thresholds.py
 ```
 
 ---
@@ -246,8 +260,9 @@ ground_truth/ground_truth_statuess_ca_2026.csv
 ### Train/Test Split (for Layer 2)
 
 Split manifest: `data/samples/split_manifest.csv`
-- Valid + invalid only (needs_recalibration excluded from split)
+- Valid + invalid only (`needs_recalibration` excluded — kept in samples but not in split)
 - 75/25 stratified by status, sorted by (group_id, date)
+- Symlinks at `data/samples/temperature-export/train/` and `.../test/`
 
 | | Train | Test | Total |
 |---|---|---|---|

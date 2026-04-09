@@ -21,16 +21,19 @@ metrics:
     grading:
       large:
         std_dev_max: 0.531      # large p90 — above → unusually volatile for a large hive
-        iqr_max: 0.689          # large p90 — NEW: robust stability check (outlier-insensitive)
+        iqr_max: 0.689          # large p90 — robust stability check (outlier-insensitive)
         corr_max: 0.749         # large p90 — above → unusually coupled to ambient for large
-        comfort_min: 97.917     # large p10 — below → unusually out of brood zone for large
+        comfort_min: 95.833     # large p10 (all groups) — p10 valid-only=97.917 was too strict:
+                                #   fires for 12.7% of valid large sensors vs intended 10%
       medium:
         mean_temp_min: 24.581   # medium p10 — below → unusually cold for a medium hive
-        percent_comfort_max: 0  # medium p10 — NEW: zero comfort time looks like a small hive
+        # percent_comfort_max removed: medium p10=p25=0 — the <= 0 condition fired for 25%+
+        #   of valid medium sensors (degenerate boundary at zero). Re-introduce only once
+        #   a non-zero p10 is observed in a broader or warmer dataset.
       small:
         std_dev_min: 1.047      # small p10 — below → suspiciously stable for a small hive
-        iqr_min: 1.364          # small p10 — NEW: robust companion to std_dev_min
-        mean_temp_max: 28.670   # small p90 — NEW: small hive running too warm is suspicious
+        iqr_min: 1.364          # small p10 — robust companion to std_dev_min
+        mean_temp_max: 28.670   # small p90 — small hive running too warm is suspicious
 
 decision:
   # Populated once decision rules are defined.
