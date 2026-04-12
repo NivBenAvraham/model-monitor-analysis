@@ -1,0 +1,170 @@
+TEMPERATURE DATA EXPORT — Specification
+═══════════════════════════════════════════════════════════════════════
+
+PURPOSE
+───────
+Extract raw temperature data from AWS Athena (curated data lake) and save
+it as local Parquet files for offline analysis.
+
+Replaces the dependency on the external `temperature_data_export_package`
+(beehero-streamlit-app). All queries, preprocessing, and transforms are
+owned by this skill.
+
+Output is consumed by:
+  → skills/sensor_group_segment/  (Layer 1 physics analysis)
+  → skills/group_model_temperature_health/  (Layer 2 model health, future)
+
+
+═══════════════════════════════════════════════════════════════════════
+DATA SOURCES
+═══════════════════════════════════════════════════════════════════════
+
+Database    : data_lake_curated_data  (Athena workgroup: data_analytics)
+S3 staging  : s3://us-east-1-data-analytics-storage/athena-query-results/
+Region      : us-east-1
+
+─────────────────────────────────────────────────────────────────
+TABLE SWITCH — bee_frames source (IMPORTANT)
+─────────────────────────────────────────────────────────────────
+Both tables live in data_lake_raw_data. Structure is identical.
+
+  date < 2026-03-10  →  supervised_beeframes
+  date ≥ 2026-03-10  →  unified_bee_frames
+
+Always call raw_bee_frames_table(date) from scripts/queries.py.
+Never hardcode either table name.
+
+
+═══════════════════════════════════════════════════════════════════════
+QUERY PIPELINE — per (group_id, date)
+═══════════════════════════════════════════════════════════════════════
+
+Three Athena calls are made sequentially per task.
+Each subsequent call uses results from the previous one.
+
+─────────────────────────────────────────────────────────────────
+QUERY 1 — hive_updates_query()
+─────────────────────────────────────────────────────────────────
+Source tables:
+  data_lake_curated_data.hive_updates_metadata
+  data_lake_curated_data.sensor_daily_snapshot
+  data_lake_raw_data.{supervised_beeframes | unified_bee_frames}
+
+Returns (one row per sensor, latest update for the date):
+  created, sensor_mac_address, group_id, bee_frames, model
+
+Dedup: row_number() OVER (PARTITION BY sensor, date, model ORDER BY log_timestamp DESC)
+
+─────────────────────────────────────────────────────────────────
+QUERY 2 — sensor_samples_query()
+─────────────────────────────────────────────────────────────────
+Source table: data_lake_curated_data.sensor_samples
+Inputs: sensor_mac_address list from Query 1
+
+Window: [date - 2 days, date)  — 48 hours of readings before the label date
+
+Returns:
+  sensor_mac_address, timestamp, pcb_temperature_one, gateway_mac_address, humidity
+
+Post-query preprocessing (scripts/transforms.py):
+  1. Fix encoding errors: readings < -40°C → add 175.71
+  2. Range filter: keep pcb_temperature_one ∈ [-30, 100]
+  3. Humidity filter: drop rows where humidity > 95
+  4. Z-score spike removal per sensor (threshold = 3, geometric mean of diffs)
+  5. Resample to 30-min means per sensor
+  6. Join gateway_mac_address back (pre-preprocessing mapping)
+  7. Join hive_size_bucket from bee_frames (small / medium / large)
+  8. Join group_id from hive_updates
+
+─────────────────────────────────────────────────────────────────
+QUERY 3 — gateway_samples_query()
+─────────────────────────────────────────────────────────────────
+Source tables:
+  data_lake_curated_data.gateway_samples
+  data_lake_raw_data.gateways  (for hardware_extensions)
+Inputs: gateway_mac_address list from Query 2
+
+Window: [date - 2 days, date)  — same as sensor window
+
+Returns:
+  gateway_mac_address, timestamp, pcb_temperature_two,
+  acceleration_x, acceleration_y, acceleration_z, hardware_extension_present
+
+Post-query filter:
+  Drop rows where pcb_temperature_two IS NULL
+  Drop rows where acceleration_x = acceleration_y = acceleration_z = 0
+    (zero acceleration indicates static/bad hardware — ambient readings unreliable)
+
+
+═══════════════════════════════════════════════════════════════════════
+OUTPUT FILES — per (group_id, date)
+═══════════════════════════════════════════════════════════════════════
+
+  data/samples/temperature-export/group_{id}/{date}/
+    {id}_{date}_hive_updates.parquet
+    {id}_{date}_sensor_temperature.parquet
+    {id}_{date}_gateway_temperature.parquet
+
+─────────────────────────────────────────────────────────────────
+hive_updates schema
+─────────────────────────────────────────────────────────────────
+  created              datetime   Update timestamp
+  sensor_mac_address   string     Hive sensor
+  group_id             int        Beekeeper group
+  bee_frames           int        Frame count (0–20)
+  model                string     Model/lambda name used
+
+─────────────────────────────────────────────────────────────────
+sensor_temperature schema
+─────────────────────────────────────────────────────────────────
+  sensor_mac_address   string     Hive sensor
+  timestamp            datetime   30-min bin (resampled mean)
+  pcb_temperature_one  float      Hive internal temperature (°C)
+  gateway_mac_address  string     Gateway the sensor reported through
+  hive_size_bucket     string     small / medium / large  (from bee_frames)
+  group_id             int        Beekeeper group
+
+─────────────────────────────────────────────────────────────────
+gateway_temperature schema
+─────────────────────────────────────────────────────────────────
+  gateway_mac_address        string   Gateway device
+  timestamp                  datetime Measurement timestamp (raw, not resampled)
+  pcb_temperature_two        float    Ambient (outdoor) temperature (°C)
+  acceleration_x/y/z         float    Accelerometer readings
+  hardware_extension_present bool     True if hardware extension attached
+  group_id                   int      Beekeeper group (from sensor mapping)
+
+
+═══════════════════════════════════════════════════════════════════════
+PARALLELISM
+═══════════════════════════════════════════════════════════════════════
+
+pull_samples.py uses ThreadPoolExecutor (default: 8 workers).
+Each thread holds its own pyathena connection (pyathena is not thread-safe).
+The 3 queries per task run sequentially within a thread.
+Tasks for different (group_id, date) pairs run in parallel across threads.
+
+Recommended: --workers 8 on a standard laptop against Athena.
+Increase to 16 if network bandwidth allows; higher values rarely help
+as Athena queuing becomes the bottleneck.
+
+
+═══════════════════════════════════════════════════════════════════════
+EXTRACTION PLAN
+═══════════════════════════════════════════════════════════════════════
+
+config/extraction_plan.py — list of (group_id, start_date, end_date, model)
+Derived from: ground_truth/ground_truth_statuess_ca_2026.csv
+
+51 groups, 643 labelled dates → expands to one Task per day.
+Overlapping date ranges: first occurrence wins (no duplicates).
+
+
+═══════════════════════════════════════════════════════════════════════
+FILES
+═══════════════════════════════════════════════════════════════════════
+
+  scripts/queries.py      All Athena SQL (hive_updates, sensor, gateway)
+  scripts/transforms.py   Sensor preprocessing + hive_size_bucket mapping
+  scripts/pull_samples.py CLI orchestration — parallel extraction
+  config/extraction_plan.py  51 groups × date ranges × model names

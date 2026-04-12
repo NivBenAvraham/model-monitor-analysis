@@ -49,10 +49,13 @@ group_id  (beekeeper)
 
 ## Data Sources for sensor_group_segment
 
-### 1. Temperature Data — ETL via `temperature_data_export_package`
+### 1. Temperature Data — `skills/temperature_data_export`
 
-ETL is handled by `temperature_data_export_package` (read-only, from `beehero-streamlit-app`).
-Functions used: `load_sensor_samples()`, `load_gateway_samples()`, `add_hive_size_bucket()`.
+ETL is owned by `skills/temperature_data_export/` (in-house, no external dependency).
+Key scripts:
+- `scripts/queries.py`    — all Athena SQL (hive_updates, sensor_samples, gateway_samples)
+- `scripts/transforms.py` — sensor preprocessing + `add_hive_size_bucket()`
+- `scripts/pull_samples.py` — parallel CLI (ThreadPoolExecutor, 8 workers default)
 
 Local samples are stored under `data/samples/temperature-export/group_{id}/{date}/` as Parquet files.
 
@@ -228,8 +231,10 @@ skills/sensor_group_segment/
 source scripts/refresh_aws_credentials.sh
 source .venv/bin/activate
 
-# Step 1 — pull raw samples (long-running — run in background or nohup)
-python skills/sensor_group_segment/scripts/pull_samples.py
+# Step 1 — pull raw samples (parallel, 8 workers by default)
+python skills/temperature_data_export/scripts/pull_samples.py
+# or for a single pair:
+# python skills/temperature_data_export/scripts/pull_samples.py --group-id 1144 --date 2026-02-22
 
 # Step 2 — create train/test symlinks
 python skills/sensor_group_segment/scripts/create_split.py
