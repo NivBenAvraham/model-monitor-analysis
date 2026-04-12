@@ -1,12 +1,11 @@
 """
 extract_features.py — Full Phase 1 feature extraction across samples.
 
-Runs Phase 1 on every available (group_id, date) sample and produces the
-complete feature table. Unlike run.py (which only grades train data), this
-script is used for EDA, threshold calibration, and model development.
+Thin wrapper around compute(full=True) from sensor_group_segment.py.
+Produces the complete feature table for EDA, threshold calibration, and model development.
 
-  run.py            → train only  → grading columns (lean 5 features + status)
-  extract_features  → any split   → full feature set (all raw metrics)
+  run.py            → train only  → lean columns (5 grading features + status)
+  extract_features  → any split   → full feature set (all 14 raw metrics)
 
 Usage:
     python skills/sensor_group_segment/scripts/extract_features.py
@@ -21,7 +20,7 @@ Output:
 Output columns:
     group_id, date, sensor_mac_address, gateway_mac_address, hive_size_bucket,
     std_dev, iqr,
-    ambient_corr_median, ambient_corr_mean,
+    ambient_correlation (vs median), ambient_corr_mean,
     min_temp, mean_temp, max_temp, median_temp,
     percent_comfort, n_readings
 """
@@ -33,242 +32,104 @@ import logging
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
-from scipy import stats
 
-SKILL_ROOT = Path(__file__).resolve().parents[1]   # skills/sensor_group_segment/
-REPO_ROOT  = Path(__file__).resolve().parents[3]   # repo root
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+REPO_ROOT  = Path(__file__).resolve().parents[4]
+SKILL_ROOT = REPO_ROOT / "skills" / "sensor_group_segment"
+DATA_DIR   = REPO_ROOT / "data" / "samples" / "temperature-export"
 
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from model_monitor.metrics.sensor_group_segment import (
-    COMFORT_HIGH,
-    COMFORT_LOW,
-    MIN_READINGS,
-    RESAMPLE_FREQ,
-    _resample_sensor,
-    _resample_gateway,
-    _sensor_gateway_map,
-    _stability,
-)
+from model_monitor.metrics.sensor_group_segment import compute  # noqa: E402
 
-SAMPLES_ROOT = REPO_ROOT / "data/samples/temperature-export"
-OUTPUT_DIR   = REPO_ROOT / "data/features/sensor_group_segment"
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-SPLIT_DIRS = {
-    "all":   SAMPLES_ROOT,
-    "train": SAMPLES_ROOT / "train",
-    "test":  SAMPLES_ROOT / "test",
-}
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-METRIC_COLS = [
-    "std_dev", "iqr",
-    "ambient_corr_median", "ambient_corr_mean",
-    "min_temp", "mean_temp", "max_temp", "median_temp",
-    "percent_comfort",
-]
+def _load_split(split: str) -> list[Path]:
+    """Return Parquet dirs under the requested split (or all dates if 'all')."""
+    root = DATA_DIR if split == "all" else DATA_DIR / split
+    dirs = sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith("_"))
+    log.info(f"Found {len(dirs)} date folders in '{root}'")
+    return dirs
+
+
+def _load_parquet(date_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame] | None:
+    """Load sensor + gateway parquet files from one date folder."""
+    sensor_files  = list(date_dir.glob("sensor_data*.parquet"))
+    gateway_files = list(date_dir.glob("gateway_data*.parquet"))
+    if not sensor_files or not gateway_files:
+        return None
+    sensor_df  = pd.concat([pd.read_parquet(f) for f in sensor_files],  ignore_index=True)
+    gateway_df = pd.concat([pd.read_parquet(f) for f in gateway_files], ignore_index=True)
+    return sensor_df, gateway_df
 
 
 # ---------------------------------------------------------------------------
-# Full alignment — median + mean ambient from sensor's local gateways
-# ---------------------------------------------------------------------------
-
-def _align_full(sensor_df: pd.DataFrame, gateway_df: pd.DataFrame, freq: str) -> pd.DataFrame:
-    """Like _align but keeps both ambient_median and ambient_mean per sensor per hour."""
-    sensor_h  = _resample_sensor(sensor_df, freq)
-    gateway_h = _resample_gateway(gateway_df, freq)
-    sg_map    = _sensor_gateway_map(sensor_df)
-
-    local_ambient = sg_map.merge(gateway_h, on="gateway_mac_address", how="inner")
-
-    local_agg = (
-        local_ambient
-        .groupby(["sensor_mac_address", "timestamp"])["ambient_temp"]
-        .agg(ambient_median="median", ambient_mean="mean")
-        .reset_index()
-    )
-    return sensor_h.merge(local_agg, on=["sensor_mac_address", "timestamp"], how="inner")
-
-
-# ---------------------------------------------------------------------------
-# Full per-sensor metric helpers
-# ---------------------------------------------------------------------------
-
-def _decoupling_full(internal: pd.Series, ambient_median: pd.Series,
-                     ambient_mean: pd.Series) -> dict[str, float]:
-    """Pearson r against both yard-level ambient references."""
-    if len(internal) < MIN_READINGS:
-        return {"ambient_corr_median": float("nan"), "ambient_corr_mean": float("nan")}
-    with np.errstate(invalid="ignore"):
-        r_med,  _ = stats.pearsonr(internal, ambient_median)
-        r_mean, _ = stats.pearsonr(internal, ambient_mean)
-    return {"ambient_corr_median": float(r_med), "ambient_corr_mean": float(r_mean)}
-
-
-def _comfort_zone_full(internal: pd.Series) -> dict[str, float]:
-    """Full temperature distribution + comfort zone %."""
-    in_zone = (internal >= COMFORT_LOW) & (internal <= COMFORT_HIGH)
-    return {
-        "min_temp":        float(internal.min()),
-        "mean_temp":       float(internal.mean()),
-        "max_temp":        float(internal.max()),
-        "median_temp":     float(internal.median()),
-        "percent_comfort": float(in_zone.mean() * 100),
-    }
-
-
-def compute_full(sensor_df: pd.DataFrame, gateway_df: pd.DataFrame, date: str) -> pd.DataFrame:
-    """Full feature extraction — all metrics per (date, sensor_mac_address)."""
-    aligned = _align_full(sensor_df, gateway_df, RESAMPLE_FREQ)
-
-    meta = (
-        sensor_df[["sensor_mac_address", "hive_size_bucket", "group_id"]]
-        .drop_duplicates("sensor_mac_address", keep="last")
-    )
-
-    records: list[dict] = []
-
-    for sensor_mac, grp in aligned.groupby("sensor_mac_address"):
-        both = grp[["internal_temp", "ambient_median", "ambient_mean"]].dropna()
-        if len(both) < MIN_READINGS:
-            continue
-
-        row: dict = {
-            "sensor_mac_address":  sensor_mac,
-            "gateway_mac_address": grp["gateway_mac_address"].iloc[0],
-            "n_readings":          len(both),
-        }
-        row.update(_stability(both["internal_temp"]))
-        row.update(_decoupling_full(both["internal_temp"],
-                                    both["ambient_median"], both["ambient_mean"]))
-        row.update(_comfort_zone_full(both["internal_temp"]))
-        records.append(row)
-
-    if not records:
-        return pd.DataFrame()
-
-    result = pd.DataFrame(records).merge(meta, on="sensor_mac_address", how="left")
-    result["date"] = date
-
-    ordered_cols = [
-        "group_id", "date", "sensor_mac_address", "gateway_mac_address", "hive_size_bucket",
-        "std_dev", "iqr", "ambient_corr_median", "ambient_corr_mean",
-        "min_temp", "mean_temp", "max_temp", "median_temp", "percent_comfort", "n_readings",
-    ]
-    return result[ordered_cols].sort_values(
-        ["group_id", "date", "sensor_mac_address"],
-    ).reset_index(drop=True)
-
-
-# ---------------------------------------------------------------------------
-# Script entrypoint
+# Main
 # ---------------------------------------------------------------------------
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Extract full Phase 1 features from samples.")
+    p = argparse.ArgumentParser(description="Extract full Phase 1 feature table.")
     p.add_argument(
-        "--split", "-s",
-        choices=["all", "train", "test"],
-        default="all",
-        help="Which samples to process (default: all)",
+        "--split", choices=["all", "train", "test"], default="all",
+        help="Which data split to process (default: all)",
     )
     p.add_argument(
         "--output", "-o",
-        default=None,
-        help="Override output parquet path",
+        default=str(REPO_ROOT / "data" / "features" / "sensor_group_segment"),
+        help="Output directory for the parquet file",
     )
     return p.parse_args()
 
 
-def iter_samples(root: Path):
-    """Yield (group_id, date_str, sensor_df, gateway_df) for every sample in root."""
-    for group_dir in sorted(root.iterdir()):
-        if not group_dir.is_dir() or group_dir.name in {"train", "test"}:
-            continue
-        gid_str = group_dir.name.replace("group_", "")
-        if not gid_str.isdigit():
-            continue
-        gid = int(gid_str)
-
-        for date_dir in sorted(group_dir.iterdir()):
-            if not date_dir.is_dir():
-                continue
-            date_str = date_dir.name
-
-            sensor_files  = list(date_dir.glob(f"{gid}_*_sensor_temperature.parquet"))
-            gateway_files = list(date_dir.glob(f"{gid}_*_gateway_temperature.parquet"))
-
-            if not sensor_files or not gateway_files:
-                log.warning(f"  {gid}/{date_str}: missing files — skipping")
-                continue
-
-            yield gid, date_str, pd.read_parquet(sensor_files[0]), pd.read_parquet(gateway_files[0])
-
-
-def _print_summary(combined: pd.DataFrame) -> None:
-    log.info(f"\n  {len(combined):,} sensor-rows  |  "
-             f"{combined['group_id'].nunique()} groups  |  "
-             f"{combined['date'].nunique()} dates")
-
-    log.info(f"\nHive size distribution:\n"
-             f"{combined['hive_size_bucket'].value_counts().to_string()}")
-
-    grp     = combined.groupby("hive_size_bucket")
-    header  = f"  {'metric':<24}{'large':>20}{'medium':>20}{'small':>20}"
-    divider = "  " + "-" * 84
-    rows    = [header, divider]
-
-    for col in METRIC_COLS:
-        means = grp[col].mean()
-        stds  = grp[col].std()
-        def fmt(size: str) -> str:
-            if size not in means.index:
-                return f"{'—':>20}"
-            return f"{means[size]:>10.3f} ± {stds[size]:<7.3f}"
-        rows.append(f"  {col:<24}{fmt('large')}{fmt('medium')}{fmt('small')}")
-
-    rows.append(divider)
-    counts = grp.size()
-    rows.append(f"  {'n_sensors':<24}"
-                f"{counts.get('large',  0):>20,}"
-                f"{counts.get('medium', 0):>20,}"
-                f"{counts.get('small',  0):>20,}")
-
-    log.info("\nMean ± std by hive size:\n" + "\n".join(rows))
-
-
 def main() -> None:
     args   = parse_args()
-    root   = SPLIT_DIRS[args.split]
-    output = Path(args.output) if args.output else OUTPUT_DIR / f"{args.split}_features.parquet"
-    output.parent.mkdir(parents=True, exist_ok=True)
+    splits = _load_split(args.split)
 
-    log.info(f"Split  : {args.split}")
-    log.info(f"Source : {root}")
-    log.info(f"Output : {output}")
+    all_results: list[pd.DataFrame] = []
 
-    all_features: list[pd.DataFrame] = []
-
-    for gid, date_str, sensor_df, gateway_df in iter_samples(root):
-        features = compute_full(sensor_df, gateway_df, date=date_str)
-        if features.empty:
-            log.warning(f"  {gid}/{date_str}: no features — skipping")
+    for date_dir in splits:
+        date = date_dir.name
+        pair = _load_parquet(date_dir)
+        if pair is None:
+            log.warning(f"  skip {date}: missing sensor or gateway files")
             continue
-        all_features.append(features)
-        log.info(f"  group {gid} / {date_str}  →  {len(features):,} sensors")
+        sensor_df, gateway_df = pair
 
-    if not all_features:
-        log.error("No features produced. Check that samples exist.")
-        return
+        log.info(f"Processing {date} — {sensor_df['sensor_mac_address'].nunique()} sensors")
+        result = compute(sensor_df, gateway_df, date, full=True)
+        if result.empty:
+            log.warning(f"  no output for {date}")
+            continue
+        all_results.append(result)
 
-    combined = pd.concat(all_features, ignore_index=True)
-    combined.to_parquet(output, index=False)
-    log.info(f"\nSaved → {output}")
-    _print_summary(combined)
+    if not all_results:
+        log.error("No results produced. Check that data directories contain parquet files.")
+        sys.exit(1)
+
+    combined = pd.concat(all_results, ignore_index=True)
+
+    out_dir  = Path(args.output)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{args.split}_features.parquet"
+    combined.to_parquet(out_path, index=False)
+    log.info(f"\nSaved → {out_path}  ({len(combined):,} rows)")
+
+    # --- Summary ---
+    num_cols = ["std_dev", "iqr", "ambient_correlation", "ambient_corr_mean",
+                "min_temp", "mean_temp", "max_temp", "median_temp", "percent_comfort"]
+    for bucket, grp in combined.groupby("hive_size_bucket"):
+        log.info(f"\n  [{bucket}]  n={len(grp):,}")
+        for col in num_cols:
+            if col in grp.columns:
+                log.info(f"    {col:<25} {grp[col].mean():.3f} ± {grp[col].std():.3f}")
 
 
 if __name__ == "__main__":

@@ -123,23 +123,20 @@ def _align(sensor_df: pd.DataFrame, gateway_df: pd.DataFrame, freq: str) -> pd.D
     Per-sensor local ambient: for each sensor, aggregate ambient temp from
     only the gateways it actually communicated through, then join by timestamp.
 
-    Returns one row per (sensor_mac_address, hour) with internal_temp +
-    ambient_median + ambient_mean (computed from that sensor's local gateways).
+    Always computes both ambient_median and ambient_mean so callers can choose.
+    Returns one row per (sensor_mac_address, hour).
     """
-    sensor_h   = _resample_sensor(sensor_df, freq)
-    gateway_h  = _resample_gateway(gateway_df, freq)
-    sg_map     = _sensor_gateway_map(sensor_df)
+    sensor_h  = _resample_sensor(sensor_df, freq)
+    gateway_h = _resample_gateway(gateway_df, freq)
+    sg_map    = _sensor_gateway_map(sensor_df)
 
-    # For each sensor, get all its gateways' hourly ambient readings
     local_ambient = sg_map.merge(gateway_h, on="gateway_mac_address", how="inner")
 
-    # Aggregate to per-sensor per-hour: median across local gateways (robust)
     local_agg = (
         local_ambient
         .groupby(["sensor_mac_address", "timestamp"])["ambient_temp"]
-        .median()
+        .agg(ambient_median="median", ambient_mean="mean")
         .reset_index()
-        .rename(columns={"ambient_temp": "ambient_median"})
     )
 
     return sensor_h.merge(local_agg, on=["sensor_mac_address", "timestamp"], how="inner")
@@ -162,27 +159,43 @@ def _stability(internal: pd.Series) -> dict[str, float]:
     }
 
 
-def _decoupling(internal: pd.Series, ambient_median: pd.Series) -> dict[str, float]:
+def _decoupling(internal: pd.Series, ambient_median: pd.Series,
+                ambient_mean: pd.Series | None = None) -> dict[str, float]:
     """Metric 2 — does internal temp move with outside weather?
     r ≈ 0 → thermally independent (strong).  r → 1 → follows ambient (weak).
-    Uses median-across-local-gateways as ambient reference (robust to outlier gateways).
+
+    Always returns ambient_correlation (vs median — robust).
+    When ambient_mean is provided also returns ambient_corr_mean (full mode).
     Returns NaN if fewer than MIN_READINGS or constant ambient."""
     if len(internal) < MIN_READINGS:
-        return {"ambient_correlation": float("nan")}
+        out = {"ambient_correlation": float("nan")}
+        if ambient_mean is not None:
+            out["ambient_corr_mean"] = float("nan")
+        return out
     with np.errstate(invalid="ignore"):
-        r, _ = stats.pearsonr(internal, ambient_median)
-    return {"ambient_correlation": float(r)}
+        r_med, _ = stats.pearsonr(internal, ambient_median)
+    out = {"ambient_correlation": float(r_med)}
+    if ambient_mean is not None:
+        with np.errstate(invalid="ignore"):
+            r_mean, _ = stats.pearsonr(internal, ambient_mean)
+        out["ambient_corr_mean"] = float(r_mean)
+    return out
 
 
-def _comfort_zone(internal: pd.Series) -> dict[str, float]:
+def _comfort_zone(internal: pd.Series, *, full: bool = False) -> dict[str, float]:
     """Metric 3 — brood-rearing band presence.
-    mean_temp: average internal temperature.
-    percent_comfort: % of hours in [32°C, 36°C]."""
+    full=False: mean_temp + percent_comfort  (grading only)
+    full=True : adds min_temp, max_temp, median_temp  (analysis)"""
     in_zone = (internal >= COMFORT_LOW) & (internal <= COMFORT_HIGH)
-    return {
+    out: dict[str, float] = {
         "mean_temp":       float(internal.mean()),
         "percent_comfort": float(in_zone.mean() * 100),
     }
+    if full:
+        out["min_temp"]    = float(internal.min())
+        out["max_temp"]    = float(internal.max())
+        out["median_temp"] = float(internal.median())
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -294,18 +307,31 @@ def grade(df: pd.DataFrame, thresholds: dict) -> pd.DataFrame:
     return result
 
 
-def compute(sensor_df: pd.DataFrame, gateway_df: pd.DataFrame, date: str) -> pd.DataFrame:
+def compute(
+    sensor_df: pd.DataFrame,
+    gateway_df: pd.DataFrame,
+    date: str,
+    *,
+    full: bool = False,
+) -> pd.DataFrame:
     """
     Phase 1 feature engineering — one row per (date, sensor_mac_address).
 
-    Produces only the Lean 5 features used by grade() thresholds.
-    For bulk extraction across all samples see skills/sensor_group_segment/scripts/extract_features.py.
+    Parameters
+    ----------
+    full : bool, default False
+        False → lean 5 grading features (used by run.py / grade())
+        True  → full 14-column feature table (used by extract_features.py for EDA)
 
-    Returns
-    -------
-    DataFrame with columns:
+    Returns (full=False)
+    --------------------
         group_id, date, sensor_mac_address, gateway_mac_address, hive_size_bucket,
-        std_dev, iqr, ambient_correlation, mean_temp, percent_comfort, n_readings
+        std_dev, iqr, ambient_correlation,
+        mean_temp, percent_comfort, n_readings
+
+    Returns (full=True) — adds:
+        ambient_corr_mean,
+        min_temp, max_temp, median_temp
     """
     aligned = _align(sensor_df, gateway_df, RESAMPLE_FREQ)
 
@@ -317,7 +343,7 @@ def compute(sensor_df: pd.DataFrame, gateway_df: pd.DataFrame, date: str) -> pd.
     records: list[dict] = []
 
     for sensor_mac, grp in aligned.groupby("sensor_mac_address"):
-        both = grp[["internal_temp", "ambient_median"]].dropna()
+        both = grp[["internal_temp", "ambient_median", "ambient_mean"]].dropna()
         if len(both) < MIN_READINGS:
             log.debug(f"  skip {sensor_mac}: only {len(both)} aligned hours")
             continue
@@ -328,8 +354,12 @@ def compute(sensor_df: pd.DataFrame, gateway_df: pd.DataFrame, date: str) -> pd.
             "n_readings":          len(both),
         }
         row.update(_stability(both["internal_temp"]))
-        row.update(_decoupling(both["internal_temp"], both["ambient_median"]))
-        row.update(_comfort_zone(both["internal_temp"]))
+        row.update(_decoupling(
+            both["internal_temp"],
+            both["ambient_median"],
+            both["ambient_mean"] if full else None,
+        ))
+        row.update(_comfort_zone(both["internal_temp"], full=full))
         records.append(row)
 
     if not records:
@@ -338,8 +368,15 @@ def compute(sensor_df: pd.DataFrame, gateway_df: pd.DataFrame, date: str) -> pd.
     result = pd.DataFrame(records).merge(meta, on="sensor_mac_address", how="left")
     result["date"] = date
 
-    ordered_cols = [
+    lean_cols = [
         "group_id", "date", "sensor_mac_address", "gateway_mac_address", "hive_size_bucket",
-        "std_dev", "iqr", "ambient_correlation", "mean_temp", "percent_comfort", "n_readings",
+        "std_dev", "iqr", "ambient_correlation",
+        "mean_temp", "percent_comfort", "n_readings",
     ]
-    return result[ordered_cols].sort_values(["group_id", "date", "sensor_mac_address"]).reset_index(drop=True)
+    full_cols = [
+        "group_id", "date", "sensor_mac_address", "gateway_mac_address", "hive_size_bucket",
+        "std_dev", "iqr", "ambient_correlation", "ambient_corr_mean",
+        "min_temp", "mean_temp", "max_temp", "median_temp", "percent_comfort", "n_readings",
+    ]
+    ordered = full_cols if full else lean_cols
+    return result[ordered].sort_values(["group_id", "date", "sensor_mac_address"]).reset_index(drop=True)

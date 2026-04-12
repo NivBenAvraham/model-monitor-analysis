@@ -179,13 +179,18 @@ Raw sensor data (per sensor, per group, per date)
 
 | Phase | Function | File |
 |-------|----------|------|
-| Phase 1 — Feature Engineering (lean, grading) | `compute()` | `src/model_monitor/metrics/sensor_group_segment.py` |
-| Phase 1 — Feature Engineering (full, EDA) | `compute_full()` | `skills/sensor_group_segment/scripts/extract_features.py` |
+| Phase 1 — lean features for grading | `compute(full=False)` | `src/model_monitor/metrics/sensor_group_segment.py` |
+| Phase 1 — full features for EDA | `compute(full=True)` | `src/model_monitor/metrics/sensor_group_segment.py` |
 | Phase 2 — Grading | `grade()` | `src/model_monitor/metrics/sensor_group_segment.py` |
+| Full feature extraction script | thin wrapper → `compute(full=True)` | `skills/sensor_group_segment/scripts/extract_features.py` |
+
+All feature logic lives in **one place** (`sensor_group_segment.py`). The `full` flag controls output width:
+- `full=False` (default): 11-column lean table — `std_dev, iqr, ambient_correlation, mean_temp, percent_comfort, n_readings`
+- `full=True`: 15-column table — adds `ambient_corr_mean, min_temp, max_temp, median_temp`
 
 Thresholds: `skills/sensor_group_segment/config/thresholds.yaml` → `metrics.sensor_group_segment.grading`
 
-Output per sensor: `PASS` / `WARNING` / `FAIL` + `reason` string.
+Output per sensor: `PASS` / `FAIL` + `reason` string.
 
 **Ambient correlation** uses per-sensor local gateways (only gateways that sensor communicated
 through), not all gateways in the group — avoids mixing distant microclimates within a group_id.
@@ -223,12 +228,19 @@ skills/sensor_group_segment/
 source scripts/refresh_aws_credentials.sh
 source .venv/bin/activate
 
-nohup python skills/sensor_group_segment/scripts/pull_samples.py > pull_log.txt 2>&1 &
+# Step 1 — pull raw samples (long-running — run in background or nohup)
+python skills/sensor_group_segment/scripts/pull_samples.py
+
+# Step 2 — create train/test symlinks
 python skills/sensor_group_segment/scripts/create_split.py
+
+# Step 3 — grade train split (lean features → PASS/FAIL)
 python skills/sensor_group_segment/scripts/run.py --output "data/results/$(date +%Y-%m-%d) sensor grp segment"
 
-# optional — full features for EDA / calibration
+# Step 4 (optional) — full feature table for EDA / calibration
 python skills/sensor_group_segment/scripts/extract_features.py --split train
+
+# Step 5 (optional) — re-derive thresholds from train distributions
 python skills/sensor_group_segment/scripts/calibrate_thresholds.py
 ```
 

@@ -84,19 +84,21 @@ Expected direction by hive size:
   Small  → significantly lower percent_comfort, mean_temp drifts with ambient
 
 ─────────────────────────────────────────────────────────────────
-COMPUTE() OUTPUT COLUMNS (lean grading features)
+compute(full=False) OUTPUT COLUMNS — lean grading features
 ─────────────────────────────────────────────────────────────────
-Used by run.py for grading:
+Default mode. Used by run.py → grade():
   group_id, date, sensor_mac_address, gateway_mac_address, hive_size_bucket,
   std_dev, iqr, ambient_correlation,
   mean_temp, percent_comfort, n_readings
 
-EXTRACT_FEATURES() OUTPUT COLUMNS (full feature table for EDA/calibration)
 ─────────────────────────────────────────────────────────────────
-Used by extract_features.py — adds internal temp distribution + both correlations:
+compute(full=True) OUTPUT COLUMNS — full feature table for EDA/calibration
+─────────────────────────────────────────────────────────────────
+Called by extract_features.py. Adds internal-temp distribution + both correlations:
   group_id, date, sensor_mac_address, gateway_mac_address, hive_size_bucket,
   std_dev, iqr,
-  ambient_corr_median, ambient_corr_mean,
+  ambient_correlation,  ← Pearson r vs ambient_median  (robust, same as lean)
+  ambient_corr_mean,    ← Pearson r vs ambient_mean    (sensitive, EDA only)
   min_temp, mean_temp, max_temp, median_temp,
   percent_comfort, n_readings
 
@@ -123,21 +125,21 @@ THEN status = FAIL
      reason = which condition(s) fired (joined with "; ")
 
 ─────────────────────────────────────────────────────────────────
-RULE B — Medium Hive Too Cold  →  status: WARNING
+RULE B — Medium Hive Too Cold  →  status: FAIL
 ─────────────────────────────────────────────────────────────────
 IF predicted == "medium"
 AND mean_temp < medium.mean_temp_min         # hive struggling to maintain heat
-THEN status = WARNING
-     reason = "Too cold for medium hive: mean_temp=X°C < Y°C"
+THEN status = FAIL
+     reason = "Medium too cold: mean_temp=X°C < Y°C"
 
 ─────────────────────────────────────────────────────────────────
-RULE C — Small Hive Misbehaving  →  status: WARNING
+RULE C — Small Hive Misbehaving  →  status: FAIL
 ─────────────────────────────────────────────────────────────────
 IF predicted == "small"
 AND (std_dev < small.std_dev_min             # suspiciously stable — likely sensor error
      OR iqr < small.iqr_min                 # robust companion check
      OR mean_temp > small.mean_temp_max)    # running too warm — likely under-counted hive
-THEN status = WARNING
+THEN status = FAIL
      reason = which condition(s) fired (joined with "; ")
 
 ─────────────────────────────────────────────────────────────────
@@ -169,10 +171,10 @@ GRADE() OUTPUT COLUMNS (appended to compute() output)
 SCRIPTS
 ═══════════════════════════════════════════════════════════════════════
 
-  pull_samples.py        Pull Athena data → data/samples/temperature-export/
-  create_split.py        Create train/test symlinks from ground truth labels
-  run.py                 Phase 1 + Phase 2 on train split → data/results/<run>/
-  extract_features.py    Phase 1 full feature table on any split → data/features/
+  pull_samples.py          Pull Athena data → data/samples/temperature-export/
+  create_split.py          Create train/test symlinks from ground truth labels
+  run.py                   Phase 1 (lean) + Phase 2 on train split → data/results/<run>/
+  extract_features.py      Thin wrapper: calls compute(full=True) → data/features/
   calibrate_thresholds.py  Derive thresholds from train distributions
 
 
