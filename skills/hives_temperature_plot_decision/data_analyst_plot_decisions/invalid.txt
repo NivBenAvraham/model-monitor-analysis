@@ -1,0 +1,27 @@
+date,group_id,reason
+'2026-02-16',790,mode collapse
+'2026-02-17',790,mode collapse
+'2026-03-17',790,unstable ambient
+'2026-03-21',790,data not stable
+'2026-03-22',790,ambient not stable raching high as 60
+'2026-01-29',518,weak hives in the large | temp drop
+'2026-02-15',518,data not stable
+'2026-02-19',549,data not stable
+'2026-03-15',549,Remove hives noise
+'2026-03-18',549,Remove hives noise
+'2026-02-15',558,week hives in medium | data not stable
+'2026-03-17',558,ambient noise
+'2026-02-11',625,perfect invalid
+'2026-02-12',625, temparture drop | perfect invalid
+'2026-03-18',625,ambient and data are not stable | perfect invalid
+'2026-03-22',625,data not stable |perfect invalid
+'2026-03-23',661,data not stable
+'2026-02-17',750,incositent bins
+'2026-03-03',750,ambient transition
+'2026-02-17',766,unclear anbuebt | data not stable
+'2026-02-19',766,unstable ambient
+'2026-03-21',766,data not stable
+'2026-02-07',935,perfect invalid
+'2026-02-02',935,ambient to cold | hives not in the groups
+'2026-02-08',935,perfect invalid
+'2026-03-21',935,perfect invalid
