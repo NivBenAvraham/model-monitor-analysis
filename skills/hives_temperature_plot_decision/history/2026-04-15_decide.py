@@ -1,17 +1,13 @@
 """
-decide.py — valid-group detector for hive temperature plots.
+decide.py — data-analyst-style decision engine for hive temperature plots.
 
 For a given (date, group_id) pair, loads raw sensor + gateway parquet data,
-evaluates 6 physics-based rules, looks up analyst tags, and combines both
-signals into a valid_score, invalid_score, and valid_pct.
+evaluates 6 physics-based rules, looks up analyst tags, combines both signals
+into a valid_score and invalid_score, then classifies as:
 
-The output is a binary prediction focused on discovering valid pairs:
-
-    Valid         — valid_pct >= VALID_PCT_THRESHOLD  (we are confident it is valid)
-    Not Confident — everything else  (not enough evidence to call it valid)
-
-Both scores are still computed and returned so you can inspect the evidence
-and calibrate thresholds over time.
+    Valid        — we are >65% confident the model output is valid
+    Invalid      — evidence clearly shows the model output is invalid
+    Needs Review — not enough signal; a human should look at the plot
 
 Usage:
     python skills/hives_temperature_plot_decision/scripts/decide.py \\
@@ -38,10 +34,8 @@ DATA_DIR  = REPO_ROOT / "data/samples/temperature-export"
 TAGS_DIR  = Path(__file__).resolve().parents[1] / "data_analyst_plot_decisions"
 
 # ── Decision thresholds ───────────────────────────────────────────────────────
-# Goal: detect valid pairs as confidently as possible.
-# Decision is binary: Valid or Not Confident.
 VALID_PCT_THRESHOLD = 0.65   # valid_score / (valid + invalid) >= this → Valid
-INVALID_MIN_SCORE   = 4.0    # informational only — kept for calibration reference
+INVALID_MIN_SCORE   = 4.0    # invalid_score >= this → Invalid
 SCORE_EPSILON       = 1e-6   # avoid divide-by-zero when both scores are 0
 
 # ── Tag bonus weights ─────────────────────────────────────────────────────────
@@ -439,15 +433,21 @@ def decide(
     total     = valid_score + invalid_score + SCORE_EPSILON
     valid_pct = valid_score / total
 
-    # Binary decision: Valid or Not Confident.
-    # Tagged invalid pairs are never Valid — invalid tag directly blocks the positive.
-    # For everything else, valid_pct alone decides.
-    if tag_invalid_bonus > 0:
-        decision = "Not Confident"
-    elif valid_pct >= VALID_PCT_THRESHOLD:
-        decision = "Valid"
+    # Tagged pairs are the primary signal — they constrain which decisions are reachable.
+    # Tagged valid  → can only be Valid or Needs Review (features add nuance, not override)
+    # Tagged invalid → always Invalid (analyst certainty respected)
+    # Untagged       → both gates apply
+    if tag_valid_bonus > 0 and tag_invalid_bonus == 0:
+        decision = "Valid" if valid_pct >= VALID_PCT_THRESHOLD else "Needs Review"
+    elif tag_invalid_bonus > 0:
+        decision = "Invalid"
     else:
-        decision = "Not Confident"
+        if valid_pct >= VALID_PCT_THRESHOLD:
+            decision = "Valid"
+        elif invalid_score >= INVALID_MIN_SCORE:
+            decision = "Invalid"
+        else:
+            decision = "Needs Review"
 
     result: dict = {
         "date":          date,

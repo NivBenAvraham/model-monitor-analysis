@@ -1,0 +1,36 @@
+{
+  "run_date": "2026-04-15",
+  "split": "train",
+  "n_pairs": 423,
+  "decision_counts": {
+    "Valid": 314,
+    "Invalid": 55,
+    "Needs Review": 54
+  },
+  "thresholds": {
+    "VALID_PCT_THRESHOLD": 0.65,
+    "INVALID_MIN_SCORE": 4.0,
+    "AMBIENT_CV_HIGH": 0.7,
+    "AMBIENT_CV_MED": 0.55,
+    "AMBIENT_CV_LOW": 0.15,
+    "AMBIENT_MIN_THRESHOLD": 2.0,
+    "AMBIENT_MAX_THRESHOLD": 50.0,
+    "BUCKET_ADHERENCE_WEIGHTS": {
+      "small": 0.1,
+      "medium": 0.35,
+      "large": 0.55
+    },
+    "ADHERENCE_MIN": 0.35,
+    "ADHERENCE_MED": 0.5,
+    "ADHERENCE_GOOD": 0.65,
+    "SENSOR_SPREAD_HIGH": 5.0,
+    "SENSOR_SPREAD_MED": 3.0,
+    "SENSOR_SPREAD_LOW": 1.5,
+    "LARGE_CORR_MAX": 0.85,
+    "SMALL_CORR_MIN": 0.4,
+    "BUCKET_SEP_MIN": 1.5,
+    "BUCKET_SEP_GOOD": 3.5,
+    "PERFECT_INVALID_BONUS": 5,
+    "NORMAL_INVALID_BONUS": 4
+  }
+}
