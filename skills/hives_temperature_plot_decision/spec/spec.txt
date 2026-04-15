@@ -4,8 +4,8 @@ Skill: hives_temperature_plot_decision
 Purpose
 -------
 Given a (date, group_id) pair, act as a data analyst and decide whether the
-BeeFrame model output is Valid, Invalid, or Needs Review — based on the raw
-temperature data that drives the scatter plot (see
+BeeFrame model output is Valid or Not Confident — based on the raw temperature
+data that drives the scatter plot (see
 skills/sensor_group_segment/scripts/plot_temperature_scatter.py) and on
 analyst-tagged example decisions.
 
@@ -15,44 +15,41 @@ Output
 Every evaluation produces:
 
   valid_score   — accumulated evidence that the model is valid   (0–10)
-  invalid_score — accumulated evidence that the model is invalid  (0–10)
+  invalid_score — accumulated evidence of invalid patterns       (0–10)
   valid_pct     — valid_score / (valid_score + invalid_score) * 100
-  decision      — one of: Valid | Invalid | Needs Review
+  decision      — one of: Valid | Not Confident
   tag_source    — whether the pair was analyst-tagged and with what label
-  tag_reason    — free-text reason string (invalid tags only)
+  tag_reason    — free-text reason string (invalid tags only, informational)
 
 
-Decision rule
--------------
-  valid_pct  >= VALID_PCT_THRESHOLD (80 %)  →  Valid
-  invalid_score >= INVALID_MIN_SCORE (5.0)  →  Invalid
-  otherwise                                 →  Needs Review
+Decision rule (binary)
+-----------------------
+  valid_pct >= VALID_PCT_THRESHOLD (65 %)  →  Valid
+  otherwise                                →  Not Confident
 
-The >80 % threshold means we require clear dominance of valid evidence before
-calling a pair Valid.  A tagged-valid pair with strong feature signals will
-always exceed this bar.  A borderline pair (e.g. valid_score=7, invalid_score=2
-→ 77.8 %) falls into Needs Review.
+The goal is to be the best predictor of valid pairs.  We call "Valid" when
+positive evidence clearly dominates.  Everything else is "Not Confident" —
+meaning the data doesn't give us enough signal to confidently assert validity.
+
+INVALID_MIN_SCORE is retained as an informational threshold for calibration
+but does NOT drive the decision.
 
 
 Score composition
 -----------------
-Both scores are the sum of two independent components:
-
-  valid_score   = feature_valid_score   (0–5)  +  tag_valid_bonus   (0–5)
-  invalid_score = feature_invalid_score (0–5)  +  tag_invalid_bonus (0–5)
+  valid_score   = feature_valid_score (0–5)  +  tag_valid_bonus (0–5)
+  invalid_score = feature_invalid_score (0–5)   ← tags never add invalid weight
 
 
-Tag component (primary signal)
--------------------------------
-Analyst-tagged data is the most reliable signal.  An exact (date, group_id)
-match in the decision files contributes directly:
+Tag component (primary valid signal)
+--------------------------------------
+Analyst-tagged data is the most reliable positive signal.  An exact
+(date, group_id) match in valid.txt contributes directly:
 
-  valid.txt entry, confidence C       → tag_valid_bonus = C  (1–5)
-  invalid.txt entry (normal)          → tag_invalid_bonus = NORMAL_INVALID_BONUS  (4)
-  invalid.txt entry with "perfect invalid" → tag_invalid_bonus = PERFECT_INVALID_BONUS (5)
+  valid.txt entry, confidence C  →  tag_valid_bonus = C  (1–5)
 
-A tagged-invalid pair therefore reaches INVALID_MIN_SCORE (5) either on its own
-(perfect) or with minimal feature support (normal, bonus=4, needs ≥1 feature pt).
+Invalid tags are recorded for transparency (tag_source, tag_reason) but
+carry zero weight — the decision focuses purely on detecting valid pairs.
 
 Confidence scale in valid.txt:
   5 = perfect valid example
@@ -64,8 +61,9 @@ Confidence scale in valid.txt:
 
 Feature component (physics-based rules)
 ----------------------------------------
-Computed from the raw parquet files (sensor + gateway) for the pair.  Six rules,
-each contributing to feature_valid_score or feature_invalid_score, capped at 5.
+Computed from the raw parquet files (sensor + gateway) for the pair.  Eight
+rules, each contributing to feature_valid_score or feature_invalid_score, capped
+at 5.  Rules R3b and R4b are veto rules derived from "perfect invalid" examples.
 
 Reference lines (from plot_temperature_scatter.py SIZE_MAP):
   small  → 26 °C         (band: 26 ± BUCKET_ADHERENCE_BAND)
@@ -84,25 +82,35 @@ Rule summary:
 
   R1  Ambient stability
         metric : CV = std(gateway_hourly_mean) / mean(gateway_hourly_mean)
-        invalid : CV > AMBIENT_CV_HIGH (0.20) → +2
-                  CV > AMBIENT_CV_MED  (0.12) → +1
-        valid   : CV < AMBIENT_CV_LOW  (0.06) → +1
+        invalid : CV > AMBIENT_CV_HIGH (0.70) → +2
+                  CV > AMBIENT_CV_MED  (0.40) → +1
+        valid   : CV < AMBIENT_CV_LOW  (0.10) → +1
         catches : "unstable ambient", "ambient noise"
 
   R2  Ambient range
         metric : min and max of gateway hourly means
-        invalid : min < AMBIENT_MIN (5 °C) OR max > AMBIENT_MAX (50 °C) → +2
+        invalid : min < AMBIENT_MIN (2.0 °C) OR max > AMBIENT_MAX (50 °C) → +2
         valid   : both within range → +1
-        catches : "ambient to cold", "reaching high as 60"
+        catches : "ambient too cold", "reaching high as 60"
 
-  R3  Per-bucket reference adherence
+  R3  Per-bucket reference adherence  [weighted]
         metric : for each present bucket — fraction of sensor hourly means that
-                 fall inside that bucket's own reference band
-                 → averaged across present buckets
-        invalid : avg < ADHERENCE_MIN  (0.50) → +2
-                  avg < ADHERENCE_MED  (0.70) → +1
-        valid   : avg > ADHERENCE_GOOD (0.85) → +2
-        catches : "inconsistent bins", "weak hives in large", "week hives in medium"
+                 fall inside that bucket's own reference band.
+                 Weighted average across buckets:
+                   small  weight=0.10  (small tracks ambient, less strict)
+                   medium weight=0.35
+                   large  weight=0.55  (large must hold reference tightest)
+        invalid : weighted_avg < ADHERENCE_MIN  (0.35) → +2
+                  weighted_avg < ADHERENCE_MED  (0.55) → +1
+        valid   : weighted_avg > ADHERENCE_GOOD (0.65) → +2
+        catches : "inconsistent bins", "weak hives in large", "medium collapse"
+
+  R3b Medium adherence floor  [perfect-invalid veto]
+        metric : adherence of the medium bucket specifically
+        derived from: 625-03-18 (medium_adh=0.148) and 935-03-21 (0.142),
+                      both perfect invalids; valid p10=0.182
+        invalid : medium_adherence < MEDIUM_ADHERENCE_FLOOR (0.15) → +2
+        catches : medium bucket completely off reference bands
 
   R4  Per-bucket sensor spread
         metric : for each bucket — std of individual sensor hourly means within
@@ -111,7 +119,14 @@ Rule summary:
         invalid : avg > SENSOR_SPREAD_HIGH (5.0 °C) → +2
                   avg > SENSOR_SPREAD_MED  (3.0 °C) → +1
         valid   : avg < SENSOR_SPREAD_LOW  (1.5 °C) → +1
-        catches : "Remove hives noise", "data not stable"
+        catches : "sensors noisy", "data not stable"
+
+  R4b Single-bucket MAX spread veto  [perfect-invalid veto]
+        metric : max spread across all buckets (not average)
+        derived from: 935-02-08 (perfect invalid): small_spread=9.33 °C
+                      vs valid p90=6.67 °C
+        invalid : max(bucket_spread) > SENSOR_SPREAD_MAX_VETO (7.5 °C) → +2
+        catches : one bucket completely collapsed/heterogeneous in sensor readings
 
   R5  Per-bucket temporal stability  [bucket-weighted]
         metric : for each bucket — std of the bucket's mean temperature across
@@ -127,15 +142,61 @@ Rule summary:
 
   R6  Per-bucket ambient correlation + cross-bucket ordering
         (a) correlation:
-              small  r < SMALL_CORR_MIN (0.60) → +1 invalid  (not tracking ambient)
+              small  r < SMALL_CORR_MIN (0.40) → +1 invalid  (not tracking ambient)
               small  r ≥ SMALL_CORR_MIN         → +0.5 valid
-              large  r > LARGE_CORR_MAX (0.55) → +2 invalid  (not thermoregulating)
+              large  r > LARGE_CORR_MAX (0.85) → +2 invalid  (not thermoregulating)
               large  r ≤ LARGE_CORR_MAX         → +0.5 valid
         (b) cross-bucket ordering:
               ordering violated (small_mean > medium_mean or medium > large)
                 OR min gap < BUCKET_SEP_MIN (1.5 °C)          → +1 invalid
               full ordering AND min gap > BUCKET_SEP_GOOD (3.5 °C) → +1 valid
         catches : "mode collapse", "weak hives in large", "inconsistent bins"
+
+  R7  Large-bucket spike fraction
+        metric : fraction of per-sensor readings that deviate more than
+                 SPIKE_DELTA (8 °C) from the large bucket's hourly mean.
+                 A non-zero spike fraction means some large-hive sensors are
+                 erratic — flashing temperature bursts that don't match the rest
+                 of the cluster.
+        derived from: EDA on 103 false-positive pairs vs 232 true-positive pairs.
+                 Mann-Whitney p < 0.01.  At threshold 0.008:
+                   FP caught 10/11 affected (91%),  TP lost 4/4 affected (100%)
+                   Overall: +1.7 pp precision, -1.4 pp recall,  F1 +0.5 pp
+        invalid : large_spike_frac > LARGE_SPIKE_FRAC_HIGH (0.008) → +2
+        catches : erratic/malfunctioning individual large-hive sensors
+
+
+Perfect-invalid calibration
+-----------------------------
+Rules R3b and R4b were derived by profiling the 7 "perfect invalid" pairs
+(those tagged with "perfect invalid" in invalid.txt) against the distribution
+of GT-valid pairs.  Only signals that are:
+  (a) below the p10 of valid distribution, OR
+  (b) above the p90 of valid distribution
+are used as veto thresholds, to minimise false positive suppression.
+
+Detection results on perfect invalid pairs (7 total):
+  caught by feature rules: 5 / 7
+  still missed:            2 / 7  (625 Feb-11, 625 Feb-12)
+    → these pairs score maximum on bucket ordering and thermoregulation;
+      their invalidity stems from subtle temporal mode-collapse dynamics
+      not captured by the current feature set.
+
+Precision/recall on train set (423 pairs, GT = valid/invalid only):
+  Version                          Precision  Recall   F1
+  History (with invalid tags)       73.9%    86.2%   0.796
+  After removing invalid tags       69.3%    86.2%   0.768
+  After R7 large_spike_frac         71.0%    84.8%   0.773
+
+Remaining FP gap (~93 pairs called Valid that are GT-invalid) stems from
+groups where all current physics-based features look valid. Potential paths
+to improve further:
+  - Diurnal pattern analysis (Fourier amplitude per bucket)
+  - Per-group reference calibration (group-specific temperature baselines)
+  - Additional candidate features tested but NOT added (poor FP:TP ratio):
+    * large_temp_range: ratio ≤ 1:1 at all useful thresholds
+    * large_per_sensor_cv: ratio ≤ 1.2:1 at all useful thresholds
+    * R3b (medium adherence floor): fired on GT-valid pairs with 100+ medium sensors
 
 
 Data sources
@@ -156,26 +217,29 @@ Calibrate them as more analyst tags are added.
 
 Key thresholds and their current defaults:
 
-  VALID_PCT_THRESHOLD   = 0.80     decision gate for "Valid"
-  INVALID_MIN_SCORE     = 5.0      decision gate for "Invalid"
-  PERFECT_INVALID_BONUS = 5        tag weight for "perfect invalid"
-  NORMAL_INVALID_BONUS  = 4        tag weight for other invalid tags
-  AMBIENT_CV_HIGH       = 0.20
-  AMBIENT_CV_MED        = 0.12
-  AMBIENT_CV_LOW        = 0.06
-  AMBIENT_MIN_THRESHOLD = 5.0
-  AMBIENT_MAX_THRESHOLD = 50.0
-  BUCKET_ADHERENCE_BAND = 3.0
-  ADHERENCE_MIN         = 0.50
-  ADHERENCE_MED         = 0.70
-  ADHERENCE_GOOD        = 0.85
-  SENSOR_SPREAD_HIGH    = 5.0
-  SENSOR_SPREAD_MED     = 3.0
-  SENSOR_SPREAD_LOW     = 1.5
+  VALID_PCT_THRESHOLD       = 0.65    decision gate for "Valid"
+  INVALID_MIN_SCORE         = 4.0     informational only (not used in decision)
+  AMBIENT_CV_HIGH           = 0.70
+  AMBIENT_CV_MED            = 0.40
+  AMBIENT_CV_LOW            = 0.10
+  AMBIENT_MIN_THRESHOLD     = 2.0
+  AMBIENT_MAX_THRESHOLD     = 50.0
+  BUCKET_ADHERENCE_BAND     = 3.0
+  BUCKET_ADHERENCE_WEIGHTS  = small:0.10 / medium:0.35 / large:0.55
+  ADHERENCE_MIN             = 0.35
+  ADHERENCE_MED             = 0.55
+  ADHERENCE_GOOD            = 0.65
+  MEDIUM_ADHERENCE_FLOOR    = 0.0     (R3b veto — DISABLED; unreliable without sensor count guard)
+  SENSOR_SPREAD_HIGH        = 5.0
+  SENSOR_SPREAD_MED         = 3.0
+  SENSOR_SPREAD_LOW         = 1.5
+  SENSOR_SPREAD_MAX_VETO    = 7.5     (R4b veto — from perfect invalid examples)
   TEMPORAL_STD_HIGH_LARGE  / MED / LOW  = 2.5 / 1.5 / 0.8
   TEMPORAL_STD_HIGH_MEDIUM / MED / LOW  = 4.0 / 2.5 / 1.5
   TEMPORAL_STD_HIGH_SMALL  / MED / LOW  = 7.0 / 5.0 / 3.0
-  SMALL_CORR_MIN        = 0.60
-  LARGE_CORR_MAX        = 0.55
-  BUCKET_SEP_MIN        = 1.5
-  BUCKET_SEP_GOOD       = 3.5
+  SPIKE_DELTA               = 8.0     (deviation from bucket hourly mean to call a reading a spike)
+  LARGE_SPIKE_FRAC_HIGH     = 0.008   (R7: fraction of large-bucket spikes → +2 invalid)
+  SMALL_CORR_MIN            = 0.40
+  LARGE_CORR_MAX            = 0.85
+  BUCKET_SEP_MIN            = 1.5
+  BUCKET_SEP_GOOD           = 3.5

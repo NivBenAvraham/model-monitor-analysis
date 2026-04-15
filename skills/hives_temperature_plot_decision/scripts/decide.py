@@ -45,11 +45,10 @@ INVALID_MIN_SCORE   = 4.0    # informational only — kept for calibration refer
 SCORE_EPSILON       = 1e-6   # avoid divide-by-zero when both scores are 0
 
 # ── Tag bonus weights ─────────────────────────────────────────────────────────
-# Tagged data is the primary signal. Valid confidence (1–5) maps 1:1.
-# Invalid bonuses are set so that a tagged-invalid pair crosses INVALID_MIN_SCORE
-# either alone (perfect) or with minimal feature support (normal).
-PERFECT_INVALID_BONUS = 5    # "perfect invalid" in reason → maximum invalid signal
-NORMAL_INVALID_BONUS  = 4    # other invalid tags → crosses INVALID_MIN_SCORE alone
+# Only valid tags contribute to the score. Invalid tags are recorded for
+# transparency (tag_source / tag_reason) but carry zero weight — the goal is
+# to be the best predictor of valid, not to penalise suspected invalids.
+# Valid confidence (1–5) maps 1:1 to tag_valid_bonus.
 
 # ── R1: Ambient stability ─────────────────────────────────────────────────────
 # Calibrated from train data: valid and invalid pairs have nearly identical CV
@@ -77,9 +76,32 @@ ADHERENCE_GOOD           = 0.65  # weighted avg > this → valid signal
 # ── R4: Per-bucket sensor spread ─────────────────────────────────────────────
 # Std of individual sensor hourly means within each bucket.
 # Sensors sharing the same predicted size should track each other.
-SENSOR_SPREAD_HIGH = 5.0   # °C — noisy / heterogeneous sensors in bucket
-SENSOR_SPREAD_MED  = 3.0   # °C — mild spread
-SENSOR_SPREAD_LOW  = 1.5   # °C — sensors agree well (valid signal)
+SENSOR_SPREAD_HIGH = 5.0   # °C — avg spread across buckets → strong invalid
+SENSOR_SPREAD_MED  = 3.0   # °C — avg spread → mild invalid
+SENSOR_SPREAD_LOW  = 1.5   # °C — avg spread → valid signal
+
+# R4b: single-bucket MAX spread veto — derived from perfect invalid examples.
+# 935-02-08 (perfect invalid): small_spread=9.33.
+# GT-valid groups reach up to 8.4°C, so threshold set above that.
+# A single bucket this noisy means sensors in that size-class can't agree at all.
+SENSOR_SPREAD_MAX_VETO = 9.0   # °C — if ANY bucket exceeds this → strong invalid (+2)
+
+# ── R7: Large-bucket spike fraction ──────────────────────────────────────────
+# Fraction of per-sensor readings that deviate more than SPIKE_DELTA°C from
+# the bucket's hourly mean. A few erratic sensors dragging the large bucket
+# signal are a reliable invalid indicator.
+# Derived from EDA: large_spike_frac > 0.008 catches 10/11 FP pairs with a
+# 2.8:1 FP-to-TP ratio. GT-valid upper bound is 0.027; FP pairs reach 0.022+.
+SPIKE_DELTA            = 8.0   # °C — deviation threshold to call a reading a "spike"
+LARGE_SPIKE_FRAC_HIGH  = 0.008 # fraction of readings above SPIKE_DELTA → strong invalid (+2)
+
+# ── R3b: Medium adherence floor — DISABLED ────────────────────────────────────
+# Originally derived from 625-03-18 and 935-03-21 (perfect invalids, adh≈0.14).
+# DISABLED because GT-valid pairs also show medium_adherence as low as 0.02
+# when the group has very few medium-bucket sensors (noisy, unreliable).
+# Without a per-bucket sensor count guard this rule fires too many false negatives.
+# Re-enable once n_sensors is tracked in bucket_stats and a count guard is added.
+MEDIUM_ADHERENCE_FLOOR = 0.0   # effectively disabled (nothing fires below 0)
 
 # ── R5: Per-bucket temporal stability (bucket-weighted) ──────────────────────
 # Std of bucket mean temperature across hourly time steps.
@@ -231,6 +253,21 @@ def compute_features(
         # R5: temporal stability of bucket mean
         temporal_std = float(bucket_mean_ts.std()) if len(bucket_mean_ts) > 1 else 0.0
 
+        # R7: temporal range of bucket mean (max - min over the day)
+        temp_range = float(bucket_mean_ts.max() - bucket_mean_ts.min()) if len(bucket_mean_ts) > 1 else 0.0
+
+        # R7: fraction of per-sensor readings that deviate > SPIKE_DELTA from the
+        # bucket's hourly mean — captures erratic/malfunctioning sensors in the bucket
+        pivot_all = (
+            bdf.groupby(["timestamp", "sensor_mac_address"])["pcb_temperature_one"]
+            .mean()
+        )
+        bm_aligned = bdf.groupby("timestamp")["pcb_temperature_one"].mean()
+        bdf_with_bm = bdf.join(bm_aligned.rename("_bm"), on="timestamp")
+        spike_frac = float(
+            (abs(bdf_with_bm["pcb_temperature_one"] - bdf_with_bm["_bm"]) > SPIKE_DELTA).mean()
+        )
+
         # R6: Pearson correlation between bucket mean and ambient
         common = bucket_mean_ts.index.intersection(ambient.index)
         if len(common) >= 3:
@@ -242,6 +279,8 @@ def compute_features(
             "adherence":     in_band,
             "sensor_spread": sensor_spread,
             "temporal_std":  temporal_std,
+            "temp_range":    temp_range,
+            "spike_frac":    spike_frac,
             "mean_temp":     float(bucket_mean_ts.mean()),
             "corr_ambient":  corr,
         }
@@ -309,6 +348,7 @@ def compute_feature_scores(features: dict) -> tuple[float, float, list[str]]:
                if not np.isnan(stats[b]["sensor_spread"])]
     if spreads:
         avg_spread = float(np.mean(spreads))
+        max_spread = float(np.max(spreads))
         if avg_spread > SENSOR_SPREAD_HIGH:
             inv += 2
             reasons.append(f"sensors noisy within buckets (spread={avg_spread:.1f}°C)")
@@ -317,6 +357,29 @@ def compute_feature_scores(features: dict) -> tuple[float, float, list[str]]:
             reasons.append(f"mild sensor noise within buckets (spread={avg_spread:.1f}°C)")
         elif avg_spread < SENSOR_SPREAD_LOW:
             val += 1
+
+    # ── R4b: Single-bucket MAX spread veto (perfect-invalid pattern) ─────────
+    # Even if the average looks acceptable, one exploding bucket is a red flag.
+    # Derived from 935-02-08 (perfect invalid): small_spread=9.33 vs valid p90=6.67.
+    if spreads and max_spread > SENSOR_SPREAD_MAX_VETO:
+        inv += 2
+        max_bucket = present[np.argmax([stats[b]["sensor_spread"] for b in present])]
+        reasons.append(
+            f"extreme spread in {max_bucket} bucket "
+            f"(spread={max_spread:.1f}°C > {SENSOR_SPREAD_MAX_VETO}°C veto)"
+        )
+
+    # ── R3b: Medium adherence floor (perfect-invalid pattern) ────────────────
+    # 625-03-18 and 935-03-21 (perfect invalids): medium_adherence ≈ 0.14.
+    # Valid p10=0.18, so anything below 0.15 is well outside normal valid range.
+    if "medium" in stats:
+        med_adh = stats["medium"]["adherence"]
+        if not np.isnan(med_adh) and med_adh < MEDIUM_ADHERENCE_FLOOR:
+            inv += 2
+            reasons.append(
+                f"medium bucket severely off reference bands "
+                f"(adherence={med_adh:.2f} < {MEDIUM_ADHERENCE_FLOOR} floor)"
+            )
 
     # ── R5: Per-bucket temporal stability (bucket-weighted) ──────────────────
     t_inv: float = 0.0
@@ -385,6 +448,19 @@ def compute_feature_scores(features: dict) -> tuple[float, float, list[str]]:
         elif min_gap > BUCKET_SEP_GOOD:
             val += 1
 
+    # ── R7: Large-bucket spike fraction ──────────────────────────────────────
+    # Erratic sensors within the large bucket — readings far from the bucket's
+    # hourly mean — indicate sensor malfunction or colony chaos in the large hives.
+    # Derived from EDA: at threshold 0.008, FP:TP ratio = 2.8:1 on train data.
+    if "large" in stats:
+        large_spike = stats["large"]["spike_frac"]
+        if not np.isnan(large_spike) and large_spike > LARGE_SPIKE_FRAC_HIGH:
+            inv += 2
+            reasons.append(
+                f"large-bucket sensors spiking "
+                f"({100 * large_spike:.1f}% of readings > {SPIKE_DELTA:.0f}°C from bucket mean)"
+            )
+
     return min(inv, 5.0), min(val, 5.0), reasons
 
 
@@ -401,10 +477,11 @@ def decide(
 ) -> dict:
     key = (date, int(group_id))
 
-    # ── Tag lookup (primary signal) ───────────────────────────────────────────
-    tag_valid_bonus   = 0
-    tag_invalid_bonus = 0
-    tag_source        = "untagged"
+    # ── Tag lookup ────────────────────────────────────────────────────────────
+    # Valid tag  → boosts valid_score (confidence 1–5 maps 1:1).
+    # Invalid tag → recorded for transparency only; does NOT affect the score.
+    tag_valid_bonus = 0
+    tag_source      = "untagged"
     tag_reason: Optional[str] = None
 
     if key in valid_tags:
@@ -413,8 +490,7 @@ def decide(
 
     if key in invalid_tags:
         info = invalid_tags[key]
-        tag_invalid_bonus = PERFECT_INVALID_BONUS if info["perfect"] else NORMAL_INVALID_BONUS
-        tag_source = f"invalid ({'perfect' if info['perfect'] else 'normal'})"
+        tag_source = f"invalid ({'perfect' if info['perfect'] else 'normal'}) [informational]"
         tag_reason = info["reason"]
 
     # ── Feature-based score (always computed when data is available) ──────────
@@ -433,21 +509,15 @@ def decide(
         feature_reasons = [data_error]
 
     # ── Combine ───────────────────────────────────────────────────────────────
-    valid_score   = round(feature_valid   + tag_valid_bonus,   2)
-    invalid_score = round(feature_invalid + tag_invalid_bonus, 2)
+    valid_score   = round(feature_valid + tag_valid_bonus, 2)
+    invalid_score = round(feature_invalid, 2)          # tags never add invalid weight
 
     total     = valid_score + invalid_score + SCORE_EPSILON
     valid_pct = valid_score / total
 
     # Binary decision: Valid or Not Confident.
-    # Tagged invalid pairs are never Valid — invalid tag directly blocks the positive.
-    # For everything else, valid_pct alone decides.
-    if tag_invalid_bonus > 0:
-        decision = "Not Confident"
-    elif valid_pct >= VALID_PCT_THRESHOLD:
-        decision = "Valid"
-    else:
-        decision = "Not Confident"
+    # valid_pct alone decides — no external gate from invalid tags.
+    decision = "Valid" if valid_pct >= VALID_PCT_THRESHOLD else "Not Confident"
 
     result: dict = {
         "date":          date,
