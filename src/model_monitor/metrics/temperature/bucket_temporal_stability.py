@@ -32,9 +32,9 @@ Algorithm
 Thresholds (from 2026-04-15 decide.py)
 ---------------------------------------
 TEMPORAL_STD_MAX = {
-    "small":  6.0,
-    "medium": 5.0,
-    "large":  4.5,
+    "small":  7.0,
+    "medium": 4.0,
+    "large":  2.5,
 }
 
 Family
@@ -75,10 +75,12 @@ _METRIC_NAME:  str = "bucket_temporal_stability"
 _DAYS_PERIOD:  int = 2
 
 # ── Per-bucket temporal-stability thresholds (°C std across daily means) ──────
+# High-water-mark values from decide.py TEMPORAL_THRESHOLDS (the HIGH level per bucket).
+# Exceeding these marks is the primary invalid signal for temporal instability.
 TEMPORAL_STD_MAX: dict[str, float] = {
-    "small":  6.0,   # small hives track ambient → higher tolerance
-    "medium": 5.0,   # medium hives are semi-regulated
-    "large":  4.5,   # large hives thermoregulate → tightest tolerance
+    "small":  7.0,   # small follows ambient → high natural variation tolerated
+    "medium": 4.0,   # medium is semi-regulated
+    "large":  2.5,   # large must hold a flat line → tightest tolerance
 }
 
 

@@ -25,12 +25,12 @@ Algorithm
    c. If the mean falls outside the band → that bucket fails.
 3. The overall result pass_metric=True only when *every present* bucket passes.
 
-Thresholds (from 2026-04-15 decide.py, calibrated on train split)
--------------------------------------------------------------------
+Thresholds (from 2026-04-15 decide.py — BUCKET_REFS + BUCKET_ADHERENCE_BAND=3.0)
+----------------------------------------------------------------------------------
 BUCKET_REFS = {
-    "small":  {"low": 10.0, "high": 42.0},
-    "medium": {"low": 18.0, "high": 46.0},
-    "large":  {"low": 22.0, "high": 48.0},
+    "small":  {"low": 23.0, "high": 29.0},   # 26 ± 3 °C
+    "medium": {"low": 26.0, "high": 32.0},
+    "large":  {"low": 28.0, "high": 35.0},
 }
 
 Family
@@ -72,9 +72,9 @@ _DAYS_PERIOD:  int = 2
 
 # ── Per-bucket temperature bands (°C) ─────────────────────────────────────────
 BUCKET_REFS: dict[str, dict[str, float]] = {
-    "small":  {"low": 10.0, "high": 42.0},
-    "medium": {"low": 18.0, "high": 46.0},
-    "large":  {"low": 22.0, "high": 48.0},
+    "small":  {"low": 23.0, "high": 29.0},   # [26 ± BAND] — small tracks ambient near 26 °C
+    "medium": {"low": 26.0, "high": 32.0},
+    "large":  {"low": 28.0, "high": 35.0},
 }
 
 

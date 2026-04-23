@@ -64,10 +64,9 @@ _METRIC_NAME:  str = "sensor_spread_within_bucket"
 _DAYS_PERIOD:  int = 2
 
 # ── Threshold ─────────────────────────────────────────────────────────────────
-# Std of per-sensor mean temperatures within a bucket.  Calibrated to the top
-# ~5% of invalid cases on the train split (raised from 7.5 to 9.0 to avoid
-# over-rejecting borderline valid groups).
-SENSOR_SPREAD_MAX: float = 9.0   # °C
+# Std of per-sensor mean temperatures within a bucket (from decide.py SENSOR_SPREAD_HIGH).
+# Above this the sensors in the bucket are considered noisy / heterogeneous.
+SENSOR_SPREAD_HIGH: float = 5.0   # °C
 
 
 def sensor_spread_within_bucket(sensor_df: pd.DataFrame) -> dict:
@@ -84,8 +83,8 @@ def sensor_spread_within_bucket(sensor_df: pd.DataFrame) -> dict:
     -------
     dict with keys:
         ``metric_name``          — "sensor_spread_within_bucket".
-        ``pass_metric``          — True when every present bucket's spread ≤ SENSOR_SPREAD_MAX.
-        ``threshold``            — SENSOR_SPREAD_MAX (°C).
+        ``pass_metric``          — True when every present bucket's spread ≤ SENSOR_SPREAD_HIGH.
+        ``threshold``            — SENSOR_SPREAD_HIGH (°C).
         ``value``                — std of per-sensor means per bucket.
         ``days_period``          — 2.
         ``metric_decision_data`` — {"bucket_verdicts": {bucket: True/False}}.
@@ -95,7 +94,7 @@ def sensor_spread_within_bucket(sensor_df: pd.DataFrame) -> dict:
         return {
             "metric_name":          _METRIC_NAME,
             "pass_metric":          pass_metric,
-            "threshold":            SENSOR_SPREAD_MAX,
+            "threshold":            SENSOR_SPREAD_HIGH,
             "value":                value,
             "days_period":          _DAYS_PERIOD,
             "metric_decision_data": {
@@ -125,11 +124,11 @@ def sensor_spread_within_bucket(sensor_df: pd.DataFrame) -> dict:
 
         spread = float(sensor_means.std())
         bucket_spreads[bucket]  = round(spread, 4)
-        bucket_verdicts[bucket] = spread <= SENSOR_SPREAD_MAX
+        bucket_verdicts[bucket] = spread <= SENSOR_SPREAD_HIGH
 
         log.debug(
             "sensor_spread_within_bucket: bucket=%s spread=%.2f°C %s %.1f°C",
-            bucket, spread, "≤" if bucket_verdicts[bucket] else ">", SENSOR_SPREAD_MAX,
+            bucket, spread, "≤" if bucket_verdicts[bucket] else ">", SENSOR_SPREAD_HIGH,
         )
 
     pass_metric = all(bucket_verdicts.values()) if bucket_verdicts else True

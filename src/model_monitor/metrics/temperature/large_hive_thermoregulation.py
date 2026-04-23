@@ -22,7 +22,7 @@ Algorithm
 
 Thresholds (from 2026-04-15 decide.py)
 ---------------------------------------
-LARGE_CORR_MAX: float = 0.6   # Pearson r above this → large sensors track ambient too closely
+LARGE_CORR_MAX: float = 0.85   # from decide.py — Pearson r above this → large not thermoregulating
 
 Family
 ------
@@ -64,7 +64,7 @@ _METRIC_NAME:  str = "large_hive_thermoregulation"
 _DAYS_PERIOD:  int = 2
 
 # ── Threshold ─────────────────────────────────────────────────────────────────
-LARGE_CORR_MAX: float = 0.6
+LARGE_CORR_MAX: float = 0.85
 
 
 def large_hive_thermoregulation(

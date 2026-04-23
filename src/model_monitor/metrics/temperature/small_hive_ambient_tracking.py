@@ -26,7 +26,7 @@ Algorithm
 
 Thresholds (from 2026-04-15 decide.py)
 ---------------------------------------
-SMALL_CORR_MIN: float = 0.3   # Pearson r below this → small sensors track ambient poorly
+SMALL_CORR_MIN: float = 0.40   # from decide.py — r below this → small not tracking ambient
 
 Family
 ------
