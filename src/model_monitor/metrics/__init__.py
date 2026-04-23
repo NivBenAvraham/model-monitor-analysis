@@ -12,6 +12,15 @@ Metric computation — calculate metric values from ingested data.
 
 --- Experimental metrics ---
 
+    ambient_temperature_volatility
+        Returns True when the overnight temperature minima (the troughs of each
+        day's diurnal parabola) differ by more than MIN_DAILY_DELTA_CELSIUS (5 °C)
+        across the observation window.  Signals that weather shifted during the
+        evaluation period, which can confound temperature-based validity checks.
+        Input : gateway_hourly DataFrame with pcb_temperature_two + timestamp.
+        Output: bool — True = volatile ambient, False = stable or insufficient data.
+        Module: model_monitor.metrics.ambient_temperature_volatility
+
 --- Layer 1: sensor_group_segment skill ---
 
     sensor_group_segment    Per-sensor temperature physics check.
