@@ -1,92 +1,65 @@
 """
 Metric computation — calculate metric values from ingested data.
 
---- Current metrics (bee_frames model) ---
+── Temperature family metrics ──────────────────────────────────────────────
+All live under model_monitor.metrics.temperature.*
+Each accepts pre-loaded DataFrames and returns a dict with {"passed": bool, ...}.
 
-    mode_collapse       Detects prediction histogram collapse onto a single bin.
-    avg_overtime        Rolling average error over 3/4/5-day windows vs threshold 0.84.
-    yard_inspections    CV-ratio comparison of predictions vs yard inspection histograms.
-    ops_inspections     CV-ratio comparison of predictions vs ops inspection records.
-    hive_health         Ratio of healthy/strong hives vs total beeframes sensors.
-    post_validation     Tier1/tier2 human validation gating.
+  Module path                                          ID    Weight
+  ─────────────────────────────────────────────────────────────────
+  temperature.ambient_temperature_volatility           –     0.6
+    Night-to-night ambient jump ≥ 5 °C → True (volatile).
+    Input: raw gateway_df
 
---- Temperature family metrics ---
+  temperature.ambient_stability                        R1    0.4
+    Ambient coefficient of variation ≤ 0.55 → True.
+    Input: gateway_df
 
-All metrics below accept already-resampled hourly DataFrames.
-Use model_monitor.utils.data_utils.resample_to_hourly() to prepare inputs.
-Each metric returns bool (True = check passes / healthy).
-Each module exposes METRIC_FAMILY = "temperature" and DEFAULT_WEIGHT for the
-future temperature_health aggregator.
+  temperature.ambient_range                            R2    0.5
+    Ambient min ≥ 2 °C and max ≤ 50 °C → True.
+    Input: gateway_df
 
-    ambient_temperature_volatility          (existing)
-        Night-to-night ambient jump ≥ 5 °C → True (volatile).
-        Input : raw gateway_df (uses its own internal resampler).
-        Weight: 0.6
-        Module: model_monitor.metrics.ambient_temperature_volatility
+  temperature.bucket_reference_adherence               R3    1.0
+    Weighted fraction of readings inside canonical bands ≥ 0.50 → True.
+    Input: sensor_df
 
-    ambient_stability                       (R1)
-        Ambient coefficient of variation ≤ 0.55 → True (stable).
-        Input : gateway_hourly
-        Weight: 0.4
-        Module: model_monitor.metrics.ambient_stability
+  temperature.sensor_spread_within_bucket              R4    0.8
+    Average inter-sensor spread per bucket ≤ 5.0 °C → True.
+    Input: sensor_df
 
-    ambient_range                           (R2)
-        Ambient min ≥ 2 °C and max ≤ 50 °C → True (in range).
-        Input : gateway_hourly
-        Weight: 0.5
-        Module: model_monitor.metrics.ambient_range
+  temperature.bucket_temporal_stability                R5    0.8
+    All buckets within temporal-std limits → True.
+    Limits: large ≤ 2.5 °C, medium ≤ 4.0 °C, small ≤ 7.0 °C.
+    Input: sensor_df
 
-    bucket_reference_adherence              (R3)
-        Weighted fraction of readings inside canonical bands ≥ 0.50 → True.
-        Weights: small=0.10, medium=0.35, large=0.55.
-        Input : sensor_hourly
-        Weight: 1.0
-        Module: model_monitor.metrics.bucket_reference_adherence
+  temperature.small_hive_ambient_tracking              R6a   0.4
+    Small-bucket Pearson r with ambient ≥ 0.40 → True.
+    Input: sensor_df, gateway_df
 
-    sensor_spread_within_bucket             (R4)
-        Average inter-sensor spread per bucket ≤ 5.0 °C → True.
-        Input : sensor_hourly
-        Weight: 0.8
-        Module: model_monitor.metrics.sensor_spread_within_bucket
+  temperature.large_hive_thermoregulation              R6b   0.5
+    Large-bucket Pearson r with ambient ≤ 0.85 → True.
+    Input: sensor_df, gateway_df
 
-    bucket_temporal_stability               (R5)
-        All buckets within their temporal-std limits → True.
-        Limits: large ≤ 2.5 °C, medium ≤ 4.0 °C, small ≤ 7.0 °C.
-        Input : sensor_hourly
-        Weight: 0.8
-        Module: model_monitor.metrics.bucket_temporal_stability
+  temperature.bucket_temperature_ordering              R6c   1.0
+    mean(small) < mean(medium) < mean(large), gap ≥ 1.5 °C → True.
+    Input: sensor_df
 
-    small_hive_ambient_tracking             (R6a)
-        Small-bucket Pearson r with ambient ≥ 0.40 → True.
-        Input : sensor_hourly, gateway_hourly
-        Weight: 0.4
-        Module: model_monitor.metrics.small_hive_ambient_tracking
+── Layer 1: sensor_group_segment ───────────────────────────────────────────
+  sensor_group_segment.compute(sensor_df, gateway_df, date, full=False)
+    Per-sensor physics check. Outputs PASS / FAIL per (sensor, date).
+    full=False → lean 5 grading features
+    full=True  → full 14-feature table (for EDA / calibration)
 
-    large_hive_thermoregulation             (R6b)
-        Large-bucket Pearson r with ambient ≤ 0.85 → True.
-        Input : sensor_hourly, gateway_hourly
-        Weight: 0.5
-        Module: model_monitor.metrics.large_hive_thermoregulation
+  sensor_group_segment.grade(df, thresholds)
+    Compares predicted hive_size_bucket against observed physics.
 
-    bucket_temperature_ordering             (R6c)
-        mean(small) < mean(medium) < mean(large), gap ≥ 1.5 °C → True.
-        Input : sensor_hourly
-        Weight: 1.0
-        Module: model_monitor.metrics.bucket_temperature_ordering
+  Skill: skills/sensor_group_segment/
+  Thresholds: skills/sensor_group_segment/config/thresholds.yaml
 
---- Layer 1: sensor_group_segment skill ---
-
-    sensor_group_segment    Per-sensor temperature physics check.
-                            Computes std_dev, iqr, ambient_correlation, mean_temp,
-                            percent_comfort and grades each sensor PASS/WARNING/FAIL
-                            based on whether its physics match the predicted hive size.
-                            See: skills/sensor_group_segment/
-
---- Layer 2: group_model_temperature_health skill (not yet implemented) ---
-
-    group_model_temperature_health   Per-(group_id, date) model validity decision.
-                                     Aggregates Layer 1 sensor outputs → VALID / INVALID.
-                                     See: skills/group_model_temperature_health/
-
---- All thresholds live in skills/<skill>/config/thresholds.yaml ---
+── Layer 2: group_model_temperature_health ─────────────────────────────────
+  Not yet implemented.
+  Skill: skills/group_model_temperature_health/
 """
+
+from model_monitor.metrics import temperature  # noqa: F401 — makes subpackage importable
+from model_monitor.metrics.sensor_group_segment import compute, grade  # noqa: F401
