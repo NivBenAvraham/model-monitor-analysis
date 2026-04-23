@@ -131,9 +131,30 @@ def ambient_temperature_volatility(
         ``delta``      — absolute temperature difference between the two points (°C).
     """
 
-    ambient = get_getway_min_temp_in_freq(getway_df)
+    _METRIC_NAME = "ambient_temperature_volatility"
+    _DAYS_PERIOD = 2
+
+    def _empty(error: str) -> dict:
+        return {
+            "metric_name":          _METRIC_NAME,
+            "pass_metric":          True,   # no data to trigger a violation → neutral pass
+            "threshold":            min_delta_celsius,
+            "value":                None,
+            "days_period":          _DAYS_PERIOD,
+            "metric_decision_data": {
+                "volatile":   False,
+                "min_point1": None,
+                "min_point2": None,
+                "error":      error,
+            },
+        }
+
+    ambient_resampled = get_getway_min_temp_in_freq(getway_df)
+    if ambient_resampled is False:
+        return _empty("no valid gateway readings")
+
     # keep only the temperature series — gateway_mac_address must not leak into min/groupby
-    ambient = ambient.set_index("timestamp")["pcb_temperature_two"]
+    ambient = ambient_resampled.set_index("timestamp")["pcb_temperature_two"]
 
     # Step 1: min temperature per (date, clock-hour) across all gateways
     freq_min = ambient.groupby(
@@ -141,31 +162,31 @@ def ambient_temperature_volatility(
     ).min()
 
     # Step 2: for each date, coldest temp and which hour it occurred
-    daily_coldest = freq_min.groupby(level=0).min()
-    daily_coldest_hour = freq_min.groupby(level=0).idxmin()  # → (date, hour) tuple per date
+    daily_coldest      = freq_min.groupby(level=0).min()
+    daily_coldest_hour = freq_min.groupby(level=0).idxmin()   # → (date, hour) tuple per date
 
     if len(daily_coldest) < min_days:
         log.debug(
             "ambient_temperature_volatility: only %d day(s) of data (need %d) → False",
-            len(daily_coldest),
-            min_days,
+            len(daily_coldest), min_days,
         )
-        return {"volatile": False, "min_point1": None, "min_point2": None, "delta": None}
+        return _empty(f"only {len(daily_coldest)} day(s) of data (need {min_days})")
 
     # Find the consecutive pair with the largest delta
-    troughs = daily_coldest.sort_index()
+    troughs   = daily_coldest.sort_index()
     best_pair = None
     max_delta = -1.0
-    volatile = False
+    volatile  = False
 
     for (d_prev, t_prev), (d_curr, t_curr) in zip(
         troughs.items(), list(troughs.items())[1:]
     ):
-        delta = abs(t_curr - t_prev)
+        delta  = abs(t_curr - t_prev)
         h_prev = daily_coldest_hour[d_prev][1]
         h_curr = daily_coldest_hour[d_curr][1]
         log.debug(
-            "ambient_temperature_volatility: %s coldest=%.2f°C (hour %02d)  %s coldest=%.2f°C (hour %02d)  Δ=%.2f°C",
+            "ambient_temperature_volatility: %s coldest=%.2f°C (hour %02d)  "
+            "%s coldest=%.2f°C (hour %02d)  Δ=%.2f°C",
             d_prev, t_prev, h_prev, d_curr, t_curr, h_curr, delta,
         )
         if delta > max_delta:
@@ -174,25 +195,30 @@ def ambient_temperature_volatility(
         if delta >= min_delta_celsius:
             if not volatile:
                 log.debug(
-                    "ambient_temperature_volatility: Δ=%.2f°C ≥ %.1f°C threshold → True",
+                    "ambient_temperature_volatility: Δ=%.2f°C ≥ %.1f°C threshold → volatile=True",
                     delta, min_delta_celsius,
                 )
             volatile = True
 
     if best_pair is None:
-        return {"volatile": False, "min_point1": None, "min_point2": None, "delta": None}
+        return _empty("could not form consecutive day pairs")
 
     d_prev, t_prev, h_prev, d_curr, t_curr, h_curr = best_pair
     if not volatile:
         log.debug(
-            "ambient_temperature_volatility: daily_coldest=%s  threshold=%.1f°C → False",
-            troughs.round(2).to_dict(),
-            min_delta_celsius,
+            "ambient_temperature_volatility: daily_coldest=%s  threshold=%.1f°C → stable",
+            troughs.round(2).to_dict(), min_delta_celsius,
         )
 
     return {
-        "volatile": volatile,
-        "min_point1": {"date": d_prev, "temp": round(t_prev, 2), "hour": h_prev},
-        "min_point2": {"date": d_curr, "temp": round(t_curr, 2), "hour": h_curr},
-        "delta": round(max_delta, 2),
+        "metric_name":          _METRIC_NAME,
+        "pass_metric":          not volatile,   # passes when ambient is stable (not volatile)
+        "threshold":            min_delta_celsius,
+        "value":                round(max_delta, 2),
+        "days_period":          _DAYS_PERIOD,
+        "metric_decision_data": {
+            "volatile":   volatile,
+            "min_point1": {"date": d_prev, "temp": round(t_prev, 2), "hour": h_prev},
+            "min_point2": {"date": d_curr, "temp": round(t_curr, 2), "hour": h_curr},
+        },
     }

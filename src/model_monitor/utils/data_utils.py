@@ -73,6 +73,121 @@ def iter_all(
             yield group_id, date, sensor_df, gateway_df, hive_df
 
 
+def resample_sensor_to_hourly(sensor_df: pd.DataFrame) -> pd.DataFrame:
+    """Resample raw sensor data to 1-hour means.
+
+    Groups by (hive_size_bucket, sensor_mac_address, hour) so each row
+    represents one sensor's mean temperature for one hour within its size class.
+
+    Parameters
+    ----------
+    sensor_df:
+        Raw sensor parquet.  Must contain columns:
+        ``sensor_mac_address``, ``hive_size_bucket``,
+        ``timestamp`` (datetime-parseable), ``pcb_temperature_one``.
+
+    Returns
+    -------
+    DataFrame with columns:
+        hive_size_bucket, sensor_mac_address, timestamp, pcb_temperature_one.
+        One row per (bucket, sensor, hour).
+
+    Raises
+    ------
+    ValueError
+        If any required column is missing.
+    """
+    required = {"sensor_mac_address", "hive_size_bucket", "timestamp", "pcb_temperature_one"}
+    missing  = required - set(sensor_df.columns)
+    if missing:
+        raise ValueError(
+            f"sensor_df is missing required columns: {sorted(missing)}.  "
+            f"Found: {sorted(sensor_df.columns)}"
+        )
+
+    df = sensor_df.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+
+    return (
+        df
+        .groupby(
+            ["hive_size_bucket", "sensor_mac_address",
+             pd.Grouper(key="timestamp", freq="1h")]
+        )["pcb_temperature_one"]
+        .mean()
+        .reset_index()
+    )
+
+
+def resample_gateway_to_hourly(gateway_df: pd.DataFrame) -> pd.DataFrame:
+    """Resample raw gateway data to 1-hour means (mean across all gateways).
+
+    Collapses all gateway readings in the same hour into a single ambient value
+    by averaging.  This is the shared ambient reference used by Temperature-
+    family metrics R1–R6c.
+
+    Note: ``ambient_temperature_volatility`` uses its own internal resampler
+    (``get_getway_min_temp_in_freq``) that preserves per-gateway detail.
+    Do not use this function for that metric.
+
+    Parameters
+    ----------
+    gateway_df:
+        Raw gateway parquet.  Must contain columns:
+        ``timestamp`` (datetime-parseable) and ``pcb_temperature_two``.
+
+    Returns
+    -------
+    DataFrame with columns: timestamp, pcb_temperature_two.
+        One row per hour — mean across all gateways.
+
+    Raises
+    ------
+    ValueError
+        If any required column is missing.
+    """
+    required = {"timestamp", "pcb_temperature_two"}
+    missing  = required - set(gateway_df.columns)
+    if missing:
+        raise ValueError(
+            f"gateway_df is missing required columns: {sorted(missing)}.  "
+            f"Found: {sorted(gateway_df.columns)}"
+        )
+
+    df = gateway_df.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+
+    return (
+        df
+        .groupby(pd.Grouper(key="timestamp", freq="1h"))["pcb_temperature_two"]
+        .mean()
+        .reset_index()
+    )
+
+
+def resample_to_hourly(
+    sensor_df: pd.DataFrame,
+    gateway_df: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Resample raw sensor and gateway data to 1-hour means.
+
+    Convenience wrapper that calls ``resample_sensor_to_hourly`` and
+    ``resample_gateway_to_hourly`` together.
+
+    Parameters
+    ----------
+    sensor_df:
+        Raw sensor parquet — see ``resample_sensor_to_hourly`` for required columns.
+    gateway_df:
+        Raw gateway parquet — see ``resample_gateway_to_hourly`` for required columns.
+
+    Returns
+    -------
+    (sensor_hourly, gateway_hourly) — see the individual functions for schemas.
+    """
+    return resample_sensor_to_hourly(sensor_df), resample_gateway_to_hourly(gateway_df)
+
+
 def load_all(
     data_dir: Path = DATA_DIR_TRAIN,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:

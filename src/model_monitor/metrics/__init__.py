@@ -10,16 +10,69 @@ Metric computation — calculate metric values from ingested data.
     hive_health         Ratio of healthy/strong hives vs total beeframes sensors.
     post_validation     Tier1/tier2 human validation gating.
 
---- Experimental metrics ---
+--- Temperature family metrics ---
 
-    ambient_temperature_volatility
-        Returns True when the overnight temperature minima (the troughs of each
-        day's diurnal parabola) differ by more than MIN_DAILY_DELTA_CELSIUS (5 °C)
-        across the observation window.  Signals that weather shifted during the
-        evaluation period, which can confound temperature-based validity checks.
-        Input : gateway_hourly DataFrame with pcb_temperature_two + timestamp.
-        Output: bool — True = volatile ambient, False = stable or insufficient data.
+All metrics below accept already-resampled hourly DataFrames.
+Use model_monitor.utils.data_utils.resample_to_hourly() to prepare inputs.
+Each metric returns bool (True = check passes / healthy).
+Each module exposes METRIC_FAMILY = "temperature" and DEFAULT_WEIGHT for the
+future temperature_health aggregator.
+
+    ambient_temperature_volatility          (existing)
+        Night-to-night ambient jump ≥ 5 °C → True (volatile).
+        Input : raw gateway_df (uses its own internal resampler).
+        Weight: 0.6
         Module: model_monitor.metrics.ambient_temperature_volatility
+
+    ambient_stability                       (R1)
+        Ambient coefficient of variation ≤ 0.55 → True (stable).
+        Input : gateway_hourly
+        Weight: 0.4
+        Module: model_monitor.metrics.ambient_stability
+
+    ambient_range                           (R2)
+        Ambient min ≥ 2 °C and max ≤ 50 °C → True (in range).
+        Input : gateway_hourly
+        Weight: 0.5
+        Module: model_monitor.metrics.ambient_range
+
+    bucket_reference_adherence              (R3)
+        Weighted fraction of readings inside canonical bands ≥ 0.50 → True.
+        Weights: small=0.10, medium=0.35, large=0.55.
+        Input : sensor_hourly
+        Weight: 1.0
+        Module: model_monitor.metrics.bucket_reference_adherence
+
+    sensor_spread_within_bucket             (R4)
+        Average inter-sensor spread per bucket ≤ 5.0 °C → True.
+        Input : sensor_hourly
+        Weight: 0.8
+        Module: model_monitor.metrics.sensor_spread_within_bucket
+
+    bucket_temporal_stability               (R5)
+        All buckets within their temporal-std limits → True.
+        Limits: large ≤ 2.5 °C, medium ≤ 4.0 °C, small ≤ 7.0 °C.
+        Input : sensor_hourly
+        Weight: 0.8
+        Module: model_monitor.metrics.bucket_temporal_stability
+
+    small_hive_ambient_tracking             (R6a)
+        Small-bucket Pearson r with ambient ≥ 0.40 → True.
+        Input : sensor_hourly, gateway_hourly
+        Weight: 0.4
+        Module: model_monitor.metrics.small_hive_ambient_tracking
+
+    large_hive_thermoregulation             (R6b)
+        Large-bucket Pearson r with ambient ≤ 0.85 → True.
+        Input : sensor_hourly, gateway_hourly
+        Weight: 0.5
+        Module: model_monitor.metrics.large_hive_thermoregulation
+
+    bucket_temperature_ordering             (R6c)
+        mean(small) < mean(medium) < mean(large), gap ≥ 1.5 °C → True.
+        Input : sensor_hourly
+        Weight: 1.0
+        Module: model_monitor.metrics.bucket_temperature_ordering
 
 --- Layer 1: sensor_group_segment skill ---
 
