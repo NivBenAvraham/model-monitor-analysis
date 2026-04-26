@@ -1,7 +1,7 @@
 """
-Ambient Temperature Volatility — Layer 1 helper metric.
+Ambient Temperature Volatility — Temperature family metric.
 
-Detects whether the coldest hour of each day changes significantly between
+Detects whether the coldest nightly temperature changes significantly between
 consecutive days in the observation window.
 
 Physical motivation
@@ -9,44 +9,48 @@ Physical motivation
 Ambient (gateway) temperature follows a predictable diurnal curve: warm during
 the day, cold overnight.  Each day has one coldest hour (typically 4–6 AM).
 
-When the coldest hour of one day differs from the coldest hour of the next by
-more than ``MIN_DAILY_DELTA_CELSIUS``, the weather changed substantially between
+When the coldest nightly temperature of one day differs from the next by more
+than ``MIN_DAILY_DELTA_CELSIUS``, the weather changed substantially between
 those two nights — the hive model is being evaluated under shifting conditions.
 
 Algorithm
 ---------
-1. For each (calendar date, clock hour) pair compute the **min temperature**
-   across all gateway readings in that slot.  This handles multiple gateways
-   reporting in the same hour — they are averaged, not min-picked.
-2. For each calendar date find the clock hour whose MIN is the lowest →
-   that min is the day's "coldest hour temperature".
-3. For each consecutive (day N−1, day N) pair compute
+1. For each (gateway, clock-hour) bin compute the **min** temperature across
+   all raw readings in that bin (``get_getway_min_temp_in_freq``).
+2. For each (calendar date, clock-hour) compute the **min** across all
+   gateways — giving one coldest value per hour per day.
+3. For each calendar date find the clock-hour whose min is the lowest →
+   that value is the day's "coldest hour temperature".
+4. For each consecutive (day N−1, day N) pair compute
    ``|coldest_hour(N) − coldest_hour(N−1)|``.
-4. Return ``True`` when **any** consecutive pair's delta ≥ threshold.
+5. ``volatile=True`` when **any** consecutive pair's delta ≥ threshold.
+   ``pass_metric = not volatile`` — passes when ambient is stable.
 
-Example (step 1 — one day, 24 hours):
-    hour 00:00 → mean = 27 °C
-    hour 01:00 → mean = 25 °C
-    hour 02:00 → mean = 23 °C   ← coldest hour  (value = 23 °C)
-    hour 03:00 → mean = 24 °C
+Example (step 2–3 — one day, 24 hours):
+    hour 00:00 → min across gateways = 27 °C
+    hour 01:00 → min across gateways = 25 °C
+    hour 02:00 → min across gateways = 23 °C   ← coldest hour  (value = 23 °C)
+    hour 03:00 → min across gateways = 24 °C
     ...
 
-    day 1 coldest hour = 10 °C
-    day 2 coldest hour =  5 °C   →  delta = 5 °C  ≥ 5  →  True
+    day 1 coldest = 10 °C
+    day 2 coldest =  5 °C   →  delta = 5 °C  ≥ 5  →  volatile=True  → pass_metric=False
 
-    day 1 coldest hour = 10 °C
-    day 2 coldest hour =  8 °C   →  delta = 2 °C  < 5  →  False
+    day 1 coldest = 10 °C
+    day 2 coldest =  8 °C   →  delta = 2 °C  < 5  →  volatile=False → pass_metric=True
 
-Output
-------
-    True  — a consecutive night-to-night jump ≥ MIN_DAILY_DELTA_CELSIUS detected
-    False — all consecutive pairs are stable, or fewer than MIN_DAYS present
+Output (pass_metric)
+--------------------
+    True  — ambient is stable; all consecutive night deltas < MIN_DAILY_DELTA_CELSIUS
+    False — ambient is volatile; at least one night-to-night jump ≥ threshold
+    True  — also returned when < MIN_DAYS of data (insufficient data → neutral pass)
 
 Input
 -----
-``gateway_hourly`` must be a DataFrame with at least:
-    timestamp           — datetime (or parseable string), index or column
-    pcb_temperature_two — float, ambient °C (already resampled to hourly means)
+``getway_df`` : raw gateway DataFrame with at least:
+    timestamp           — datetime (or parseable string), as a column
+    gateway_mac_address — str, gateway identifier
+    pcb_temperature_two — float, ambient °C (raw readings; resampling done internally)
 
 Threshold
 ---------
@@ -105,30 +109,35 @@ def ambient_temperature_volatility(
     min_delta_celsius: float = MIN_DAILY_DELTA_CELSIUS,
     min_days: int = MIN_DAYS,
 ) -> dict:
-    """Return a dict with the volatility result and the two coldest-hour points
-    from the most volatile consecutive day pair.
+    """Return a standardised metric dict for ambient temperature volatility.
 
-    For each day the "coldest freq_min" is the clock-hour (00–23) whose minimum
-    temperature across all gateway readings in that slot is lowest.
+    For each day the "coldest hour" is the clock-hour (00–23) whose minimum
+    temperature across all gateways is the lowest.
 
     Parameters
     ----------
-    gateway_hourly:
-        DataFrame with a ``pcb_temperature_two`` column (ambient °C) and a
-        ``timestamp`` column (or DatetimeIndex).
+    getway_df:
+        Raw gateway DataFrame with ``timestamp``, ``gateway_mac_address``, and
+        ``pcb_temperature_two`` columns.  Resampling is handled internally.
     min_delta_celsius:
-        Minimum difference between consecutive daily coldest freq to flag as
-        volatile.  Comparison is inclusive (≥).
+        Minimum absolute difference between consecutive daily coldest-hour
+        temperatures to flag the ambient as volatile.  Comparison is inclusive (≥).
     min_days:
-        Minimum number of distinct calendar days required.
+        Minimum number of distinct calendar days required to evaluate volatility.
+        Fewer days → neutral pass (``pass_metric=True``).
 
     Returns
     -------
     dict with keys:
-        ``volatile``   — True if any consecutive pair exceeded the threshold.
-        ``min_point1`` — {"date", "temp", "hour"} for the first day of the peak pair.
-        ``min_point2`` — {"date", "temp", "hour"} for the second day of the peak pair.
-        ``delta``      — absolute temperature difference between the two points (°C).
+        ``metric_name``          — "ambient_temperature_volatility".
+        ``pass_metric``          — True when ambient is stable (not volatile).
+        ``threshold``            — min_delta_celsius.
+        ``value``                — max delta observed across all consecutive pairs (°C),
+                                   or None when insufficient data.
+        ``days_period``          — 2.
+        ``metric_decision_data`` — {"volatile", "min_point1", "min_point2"}
+                                   where min_point1/2 are {"date", "temp", "hour"}
+                                   for the most volatile consecutive pair.
     """
 
     _METRIC_NAME = "ambient_temperature_volatility"
