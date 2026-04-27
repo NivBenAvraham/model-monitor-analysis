@@ -51,8 +51,10 @@ dict
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import pandas as pd
+import yaml
 
 from model_monitor.utils.data_utils import resample_sensor_to_hourly
 
@@ -63,8 +65,14 @@ METRIC_FAMILY: str = "temperature"
 _METRIC_NAME:  str = "bucket_temperature_ordering"
 _DAYS_PERIOD:  int = 2
 
-# ── Threshold ─────────────────────────────────────────────────────────────────
-MIN_BUCKET_GAP_CELSIUS: float = 1.5
+# ── Threshold (loaded from configs/thresholds.yaml) ───────────────────────────
+def _load_thresholds() -> dict:
+    path = Path(__file__).resolve().parents[4] / "configs/thresholds.yaml"
+    with open(path) as f:
+        return yaml.safe_load(f)["metrics"]["temperature"]["bucket_temperature_ordering"]
+
+_cfg = _load_thresholds()
+MIN_BUCKET_GAP_CELSIUS: float = float(_cfg["min_gap_celsius"])
 
 _BUCKET_ORDER = ["small", "medium", "large"]
 

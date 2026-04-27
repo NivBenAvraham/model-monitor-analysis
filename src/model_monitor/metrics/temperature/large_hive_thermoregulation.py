@@ -51,8 +51,10 @@ dict
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import pandas as pd
+import yaml
 
 from model_monitor.utils.data_utils import resample_sensor_to_hourly, resample_gateway_to_hourly
 
@@ -63,8 +65,14 @@ METRIC_FAMILY: str = "temperature"
 _METRIC_NAME:  str = "large_hive_thermoregulation"
 _DAYS_PERIOD:  int = 2
 
-# ── Threshold ─────────────────────────────────────────────────────────────────
-LARGE_CORR_MAX: float = 0.85
+# ── Threshold (loaded from configs/thresholds.yaml) ───────────────────────────
+def _load_thresholds() -> dict:
+    path = Path(__file__).resolve().parents[4] / "configs/thresholds.yaml"
+    with open(path) as f:
+        return yaml.safe_load(f)["metrics"]["temperature"]["large_hive_thermoregulation"]
+
+_cfg = _load_thresholds()
+LARGE_CORR_MAX: float = float(_cfg["max_correlation"])
 
 
 def large_hive_thermoregulation(

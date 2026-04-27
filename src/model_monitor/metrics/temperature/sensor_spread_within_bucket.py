@@ -19,12 +19,19 @@ Algorithm
 2. For each bucket present in the data:
    a. Compute the overall mean temperature per sensor (mean across all hours).
    b. Compute the std of those per-sensor means within the bucket.
-   c. If std > SENSOR_SPREAD_MAX → that bucket fails.
+   c. If std > BUCKET_SPREAD_MAX[bucket] → that bucket fails.
 3. The overall result pass_metric=True only when *every present* bucket passes.
 
-Thresholds (from 2026-04-15 decide.py)
----------------------------------------
-SENSOR_SPREAD_MAX: float = 9.0   # °C — veto if any bucket's sensor-mean std exceeds this
+Thresholds (from configs/thresholds.yaml — recalibrated 2026-04-26 to per-bucket)
+---------------------------------------------------------------------------------
+Per-bucket caps because anchor analysis showed valid hives have a much tighter
+spread in the "large" bucket than in "medium" / "small". A single global cap
+either let bad large-bucket spreads through or wrongly flagged normal small-bucket
+variability.
+
+  small:   8.0 °C   (loose)
+  medium:  8.0 °C   (loose)
+  large:   1.05 °C  (clean separator on perfect-invalid anchors)
 
 Family
 ------
@@ -42,7 +49,7 @@ Output
 dict
     metric_name          : str   — "sensor_spread_within_bucket".
     pass_metric          : bool  — True = every present bucket's sensor spread is acceptable.
-    threshold            : float — SENSOR_SPREAD_MAX.
+    threshold            : dict  — BUCKET_SPREAD_MAX (per-bucket caps).
     value                : dict  — {bucket: std_of_sensor_means} for each bucket assessed.
     days_period          : int   — 2.
     metric_decision_data : dict  — {"bucket_verdicts": {bucket: True/False}}.
@@ -51,8 +58,10 @@ dict
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import pandas as pd
+import yaml
 
 from model_monitor.utils.data_utils import resample_sensor_to_hourly
 
@@ -63,10 +72,18 @@ METRIC_FAMILY: str = "temperature"
 _METRIC_NAME:  str = "sensor_spread_within_bucket"
 _DAYS_PERIOD:  int = 2
 
-# ── Threshold ─────────────────────────────────────────────────────────────────
-# Std of per-sensor mean temperatures within a bucket (from decide.py SENSOR_SPREAD_HIGH).
-# Above this the sensors in the bucket are considered noisy / heterogeneous.
-SENSOR_SPREAD_HIGH: float = 5.0   # °C
+# ── Per-bucket thresholds (loaded from configs/thresholds.yaml) ───────────────
+def _load_thresholds() -> dict:
+    path = Path(__file__).resolve().parents[4] / "configs/thresholds.yaml"
+    with open(path) as f:
+        return yaml.safe_load(f)["metrics"]["temperature"]["sensor_spread_within_bucket"]
+
+_cfg = _load_thresholds()
+BUCKET_SPREAD_MAX: dict[str, float] = {
+    "small":  float(_cfg["small"]),
+    "medium": float(_cfg["medium"]),
+    "large":  float(_cfg["large"]),
+}
 
 
 def sensor_spread_within_bucket(sensor_df: pd.DataFrame) -> dict:
@@ -83,8 +100,8 @@ def sensor_spread_within_bucket(sensor_df: pd.DataFrame) -> dict:
     -------
     dict with keys:
         ``metric_name``          — "sensor_spread_within_bucket".
-        ``pass_metric``          — True when every present bucket's spread ≤ SENSOR_SPREAD_HIGH.
-        ``threshold``            — SENSOR_SPREAD_HIGH (°C).
+        ``pass_metric``          — True when every present bucket's spread ≤ BUCKET_SPREAD_MAX[bucket].
+        ``threshold``            — BUCKET_SPREAD_MAX (per-bucket caps, °C).
         ``value``                — std of per-sensor means per bucket.
         ``days_period``          — 2.
         ``metric_decision_data`` — {"bucket_verdicts": {bucket: True/False}}.
@@ -94,7 +111,7 @@ def sensor_spread_within_bucket(sensor_df: pd.DataFrame) -> dict:
         return {
             "metric_name":          _METRIC_NAME,
             "pass_metric":          pass_metric,
-            "threshold":            SENSOR_SPREAD_HIGH,
+            "threshold":            BUCKET_SPREAD_MAX,
             "value":                value,
             "days_period":          _DAYS_PERIOD,
             "metric_decision_data": {
@@ -122,13 +139,17 @@ def sensor_spread_within_bucket(sensor_df: pd.DataFrame) -> dict:
         if len(sensor_means) < 2:
             continue   # single sensor — spread undefined, not a failure
 
+        cap = BUCKET_SPREAD_MAX.get(bucket)
+        if cap is None:
+            continue   # unknown bucket — ignore (shouldn't happen in normal flow)
+
         spread = float(sensor_means.std())
         bucket_spreads[bucket]  = round(spread, 4)
-        bucket_verdicts[bucket] = spread <= SENSOR_SPREAD_HIGH
+        bucket_verdicts[bucket] = spread <= cap
 
         log.debug(
-            "sensor_spread_within_bucket: bucket=%s spread=%.2f°C %s %.1f°C",
-            bucket, spread, "≤" if bucket_verdicts[bucket] else ">", SENSOR_SPREAD_HIGH,
+            "sensor_spread_within_bucket: bucket=%s spread=%.2f°C %s %.2f°C",
+            bucket, spread, "≤" if bucket_verdicts[bucket] else ">", cap,
         )
 
     pass_metric = all(bucket_verdicts.values()) if bucket_verdicts else True

@@ -1,0 +1,76 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# THRESHOLDS HISTORY SNAPSHOT — pre anchor recalibration (2026-04-26)
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# Reason for change
+# -----------------
+# Analyst updated the perfect-example anchor sets:
+#   skills/hives_temperature_plot_decision/data_analyst_plot_decisions/valid.txt    (14 pairs)
+#   skills/hives_temperature_plot_decision/data_analyst_plot_decisions/invalid.txt  (5 pairs)
+#
+# Calibration analysis (skills/.../calibrate_metric_thresholds.py) revealed clean
+# separation between perfect-valid and perfect-invalid value distributions for:
+#
+#   metric                       field         valid range       invalid range
+#   ─────────────────────────────────────────────────────────────────────────
+#   bucket_reference_adherence   large.low     33.95 – 34.91     31.98 – 33.45   ← clean gap
+#   sensor_spread_within_bucket  large         0.32  – 1.00      1.10  – 2.63    ← clean gap
+#   bucket_reference_adherence   medium.low    27.36 – 31.25     25.81 – 29.05   ← 4/5 catch
+#   bucket_temporal_stability    large         0.01  – 0.14      0.09  – 0.59    ← 4/5 catch
+#   bucket_temporal_stability    medium        0.03  – 0.92      0.49  – 1.95    ← 3/5 catch
+#
+# Existing thresholds were too loose to exploit these signals. This snapshot
+# preserves the previous values for rollback / audit.
+#
+# What's untouched
+# ----------------
+# ambient_temperature_volatility  — analyst directive: leave as-is.
+# ──────────────────────────────────────────────────────────────────────────────
+
+metrics:
+  temperature:
+
+    ambient_stability:              # R1
+      cv_threshold: 0.55
+      cv_high:      0.70
+
+    ambient_range:                  # R2
+      min_celsius:  2.0
+      max_celsius: 50.0
+
+    bucket_reference_adherence:     # R3
+      small:
+        low:  23.0
+        high: 29.0
+      medium:
+        low:  26.0
+        high: 32.0
+      large:
+        low:  28.0
+        high: 35.0
+
+    sensor_spread_within_bucket:    # R4
+      spread_max_celsius:  5.0
+      spread_veto_celsius: 9.0
+
+    bucket_temporal_stability:      # R5 — tightened earlier 2026-04-26
+      small_std_max:  2.5
+      medium_std_max: 2.0
+      large_std_max:  2.5
+
+    bucket_temperature_ordering:    # R6c
+      min_gap_celsius: 1.5
+
+    small_hive_ambient_tracking:    # R6a
+      min_correlation: 0.3
+
+    large_hive_thermoregulation:    # R6b
+      max_correlation: 0.85
+
+decision:
+  temperature_health_rule:
+    l1_min_pass_rate: 0.85
+    r6c_mandatory: true
+    r3_bonus: true
+    score_confidence_5_min: 0.857
+    score_confidence_4_min: 0.857

@@ -26,6 +26,7 @@ from model_monitor.metrics.temperature import (
     bucket_reference_adherence,
     sensor_spread_within_bucket,
     bucket_temporal_stability,
+    bucket_diurnal_amplitude,
     small_hive_ambient_tracking,
     large_hive_thermoregulation,
     bucket_temperature_ordering,
@@ -226,13 +227,13 @@ def test_ambient_stability_highly_unstable() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_ambient_range_in_bounds() -> None:
-    """Ambient within [2, 50] → pass_metric=True."""
+    """Ambient within [5, 50] → pass_metric=True."""
     gw = _make_gateway_hourly(mean_temp=22.0)
     assert ambient_range(gw)["pass_metric"] is True
 
 
 def test_ambient_range_too_cold() -> None:
-    """Ambient dips below 2 °C → pass_metric=False."""
+    """Ambient dips below 5 °C → pass_metric=False."""
     gw = _make_gateway_hourly(mean_temp=1.0)
     assert ambient_range(gw)["pass_metric"] is False
 
@@ -250,9 +251,9 @@ def test_ambient_range_too_hot() -> None:
 def test_bucket_reference_adherence_passes() -> None:
     """Sensors within all canonical bands → pass_metric=True."""
     sh = _concat_buckets(
-        _make_sensor_hourly("small",  mean_temp=26.0),  # [10, 42] ✓
-        _make_sensor_hourly("medium", mean_temp=29.0),  # [18, 46] ✓
-        _make_sensor_hourly("large",  mean_temp=31.0),  # [22, 48] ✓
+        _make_sensor_hourly("small",  mean_temp=22.0),  # [17.4, 29.0] ✓
+        _make_sensor_hourly("medium", mean_temp=29.0),  # [27.3, 32.0] ✓
+        _make_sensor_hourly("large",  mean_temp=34.5),  # [33.9, 35.0] ✓
     )
     assert bucket_reference_adherence(sh)["pass_metric"] is True
 
@@ -260,9 +261,9 @@ def test_bucket_reference_adherence_passes() -> None:
 def test_bucket_reference_adherence_fails() -> None:
     """Large bucket far outside its band → pass_metric=False."""
     sh = _concat_buckets(
-        _make_sensor_hourly("small",  mean_temp=26.0),
+        _make_sensor_hourly("small",  mean_temp=22.0),
         _make_sensor_hourly("medium", mean_temp=29.0),
-        _make_sensor_hourly("large",  mean_temp=5.0),   # WAY outside [22, 48]
+        _make_sensor_hourly("large",  mean_temp=5.0),   # WAY outside [33.9, 35.0]
     )
     assert bucket_reference_adherence(sh)["pass_metric"] is False
 
@@ -278,14 +279,14 @@ def test_sensor_spread_within_bucket_passes() -> None:
 
 
 def test_sensor_spread_within_bucket_fails() -> None:
-    """Two sensors 20 °C apart → std = 10 °C > SENSOR_SPREAD_MAX (9 °C) → pass_metric=False."""
+    """Two large-bucket sensors 4 °C apart → std ≈ 2.83 °C > BUCKET_SPREAD_MAX[large] (1.05 °C) → False."""
     rows = []
     for h in range(24):
         ts = pd.Timestamp("2026-03-01") + pd.Timedelta(hours=h)
         rows.append({"hive_size_bucket": "large", "sensor_mac_address": "A",
-                     "timestamp": ts, "pcb_temperature_one": 20.0})
+                     "timestamp": ts, "pcb_temperature_one": 32.0})
         rows.append({"hive_size_bucket": "large", "sensor_mac_address": "B",
-                     "timestamp": ts, "pcb_temperature_one": 40.0})
+                     "timestamp": ts, "pcb_temperature_one": 36.0})
     sh = pd.DataFrame(rows)
     assert sensor_spread_within_bucket(sh)["pass_metric"] is False
 
@@ -311,6 +312,45 @@ def test_bucket_temporal_stability_large_fails() -> None:
                          "timestamp": ts, "pcb_temperature_one": temp})
     sh = pd.DataFrame(rows)
     assert bucket_temporal_stability(sh)["pass_metric"] is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# R7 — bucket_diurnal_amplitude
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_bucket_diurnal_amplitude_passes() -> None:
+    """Flat large-bucket temperature → daily amp ≈ 0 → pass_metric=True."""
+    sh = _make_sensor_hourly("large", mean_temp=34.0)
+    assert bucket_diurnal_amplitude(sh)["pass_metric"] is True
+
+
+def test_bucket_diurnal_amplitude_large_fails() -> None:
+    """Large bucket swings 20°C every day → amp ≈ 20 > 14 → pass_metric=False."""
+    rows = []
+    for d in range(2):
+        for h in range(24):
+            ts = pd.Timestamp("2026-03-01") + pd.Timedelta(days=d, hours=h)
+            # Sinusoid with amplitude 10 → peak-to-trough ≈ 20°C
+            temp = 25.0 + 10.0 * np.sin(2 * np.pi * h / 24)
+            rows.append({"hive_size_bucket": "large", "sensor_mac_address": "A",
+                         "timestamp": ts, "pcb_temperature_one": temp})
+    sh = pd.DataFrame(rows)
+    result = bucket_diurnal_amplitude(sh)
+    assert result["pass_metric"] is False
+    assert result["value"]["large"] > 14.0
+
+
+def test_bucket_diurnal_amplitude_small_loose_passes() -> None:
+    """Small bucket can swing widely (cap=40) → 20°C swing still passes."""
+    rows = []
+    for d in range(2):
+        for h in range(24):
+            ts = pd.Timestamp("2026-03-01") + pd.Timedelta(days=d, hours=h)
+            temp = 25.0 + 10.0 * np.sin(2 * np.pi * h / 24)
+            rows.append({"hive_size_bucket": "small", "sensor_mac_address": "A",
+                         "timestamp": ts, "pcb_temperature_one": temp})
+    sh = pd.DataFrame(rows)
+    assert bucket_diurnal_amplitude(sh)["pass_metric"] is True
 
 
 # ─────────────────────────────────────────────────────────────────────────────

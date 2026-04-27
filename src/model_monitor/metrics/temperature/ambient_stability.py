@@ -23,8 +23,8 @@ Algorithm
    Return pass_metric=False when CV > AMBIENT_CV_MED  (clearly unstable).
    Return pass_metric=True  otherwise.
 
-Thresholds (from 2026-04-15 decide.py, calibrated on the train split)
-----------------------------------------------------------------------
+Thresholds (configs/thresholds.yaml → metrics.temperature.ambient_stability)
+-----------------------------------------------------------------------------
 AMBIENT_CV_HIGH = 0.70  — CV above this: only ~5% of all train pairs reach here.
 AMBIENT_CV_MED  = 0.55  — CV above this: clearly unstable (primary threshold).
 Both medians (valid and invalid) sit around 0.34 — so only extreme CV is signal.
@@ -53,8 +53,10 @@ dict
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import pandas as pd
+import yaml
 
 from model_monitor.utils.data_utils import resample_gateway_to_hourly
 
@@ -65,9 +67,15 @@ METRIC_FAMILY:   str = "temperature"
 _METRIC_NAME:    str = "ambient_stability"
 _DAYS_PERIOD:    int = 2
 
-# ── Thresholds ────────────────────────────────────────────────────────────────
-AMBIENT_CV_HIGH: float = 0.70   # severely unstable — fires only in top ~5%
-AMBIENT_CV_MED:  float = 0.55   # clearly unstable — primary pass/fail boundary
+# ── Thresholds (loaded from configs/thresholds.yaml) ──────────────────────────
+def _load_thresholds() -> dict:
+    path = Path(__file__).resolve().parents[4] / "configs/thresholds.yaml"
+    with open(path) as f:
+        return yaml.safe_load(f)["metrics"]["temperature"]["ambient_stability"]
+
+_cfg = _load_thresholds()
+AMBIENT_CV_HIGH: float = float(_cfg["cv_high"])       # severely unstable — fires only in top ~5%
+AMBIENT_CV_MED:  float = float(_cfg["cv_threshold"])  # clearly unstable — primary pass/fail boundary
 
 
 def ambient_stability(gateway_df: pd.DataFrame) -> dict:

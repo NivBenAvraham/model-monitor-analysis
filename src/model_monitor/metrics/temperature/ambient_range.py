@@ -54,8 +54,10 @@ dict
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import pandas as pd
+import yaml
 
 from model_monitor.utils.data_utils import resample_gateway_to_hourly
 
@@ -66,9 +68,15 @@ METRIC_FAMILY: str = "temperature"
 _METRIC_NAME:  str = "ambient_range"
 _DAYS_PERIOD:  int = 2
 
-# ── Thresholds ────────────────────────────────────────────────────────────────
-AMBIENT_MIN_CELSIUS: float = 2.0    # below this → too cold for normal bee activity
-AMBIENT_MAX_CELSIUS: float = 50.0   # above this → sensor error or extreme heat event
+# ── Thresholds (loaded from configs/thresholds.yaml) ──────────────────────────
+def _load_thresholds() -> dict:
+    path = Path(__file__).resolve().parents[4] / "configs/thresholds.yaml"
+    with open(path) as f:
+        return yaml.safe_load(f)["metrics"]["temperature"]["ambient_range"]
+
+_cfg = _load_thresholds()
+AMBIENT_MIN_CELSIUS: float = float(_cfg["min_celsius"])  # below this → too cold for normal bee activity
+AMBIENT_MAX_CELSIUS: float = float(_cfg["max_celsius"])  # above this → sensor error or extreme heat event
 
 
 def ambient_range(gateway_df: pd.DataFrame) -> dict:

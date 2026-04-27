@@ -15,6 +15,7 @@ Import shortcuts:
         bucket_reference_adherence,
         sensor_spread_within_bucket,
         bucket_temporal_stability,
+        bucket_diurnal_amplitude,
         small_hive_ambient_tracking,
         large_hive_thermoregulation,
         bucket_temperature_ordering,
@@ -30,6 +31,7 @@ from model_monitor.metrics.temperature.ambient_range import ambient_range
 from model_monitor.metrics.temperature.bucket_reference_adherence import bucket_reference_adherence
 from model_monitor.metrics.temperature.sensor_spread_within_bucket import sensor_spread_within_bucket
 from model_monitor.metrics.temperature.bucket_temporal_stability import bucket_temporal_stability
+from model_monitor.metrics.temperature.bucket_diurnal_amplitude import bucket_diurnal_amplitude
 from model_monitor.metrics.temperature.small_hive_ambient_tracking import small_hive_ambient_tracking
 from model_monitor.metrics.temperature.large_hive_thermoregulation import large_hive_thermoregulation
 from model_monitor.metrics.temperature.bucket_temperature_ordering import bucket_temperature_ordering
@@ -42,6 +44,7 @@ __all__ = [
     "bucket_reference_adherence",
     "sensor_spread_within_bucket",
     "bucket_temporal_stability",
+    "bucket_diurnal_amplitude",
     "small_hive_ambient_tracking",
     "large_hive_thermoregulation",
     "bucket_temperature_ordering",

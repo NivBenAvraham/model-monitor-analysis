@@ -1,0 +1,66 @@
+# Threshold snapshot — values in use BEFORE 2026-04-26 calibration
+#
+# Reason for change (2026-04-26):
+#   Calibration analysis against train split (n=423) using:
+#     POSITIVE anchor: conf_4+5 valid pairs (45 pairs)
+#     NEGATIVE anchor: "perfect invalid" pairs from history/2026-04-15/invalid.txt
+#   Findings:
+#     - R5 small threshold (7.0°C): valid p90 = 2.19°C → threshold was 3× too loose
+#     - R5 medium threshold (4.0°C): valid p90 = 1.29°C → threshold was 3× too loose
+#   Impact of tightening R5 small→2.5 + medium→2.0:
+#     - Catches ~17% more invalid groups
+#     - Loses ~7% of valid groups
+#     - Catches 1 of 13 previously invisible invalid groups
+#
+# Source of these original values: skills/hives_temperature_plot_decision/history/2026-04-15/
+#
+# See calibration script:
+#   python skills/group_model_temperature_health/scripts/calibrate_valid_threshold.py
+
+metrics:
+  temperature:
+
+    ambient_stability:              # R1
+      cv_threshold: 0.55            # AMBIENT_CV_MED  — primary pass/fail
+      cv_high:      0.70            # AMBIENT_CV_HIGH — severe instability veto
+
+    ambient_range:                  # R2
+      min_celsius:  2.0
+      max_celsius: 50.0
+
+    bucket_reference_adherence:     # R3
+      small:
+        low:  23.0
+        high: 29.0
+      medium:
+        low:  26.0
+        high: 32.0
+      large:
+        low:  28.0
+        high: 35.0
+
+    sensor_spread_within_bucket:    # R4
+      spread_max_celsius:  5.0      # SENSOR_SPREAD_HIGH — active threshold
+      spread_veto_celsius: 9.0      # SENSOR_SPREAD_MAX  — hard veto (defined but unused in code)
+
+    bucket_temporal_stability:      # R5  ← CHANGED on 2026-04-26
+      small_std_max:  7.0           # ← tightened to 2.5
+      medium_std_max: 4.0           # ← tightened to 2.0
+      large_std_max:  2.5           # unchanged
+
+    bucket_temperature_ordering:    # R6c
+      min_gap_celsius: 1.5
+
+    small_hive_ambient_tracking:    # R6a
+      min_correlation: 0.3          # note: 2026-04-15 decide.py spec shows 0.40; code uses 0.3
+
+    large_hive_thermoregulation:    # R6b
+      max_correlation: 0.85
+
+decision:
+  temperature_health_rule:
+    l1_min_pass_rate:        0.85
+    r6c_mandatory:           true
+    r3_bonus:                true
+    score_confidence_5_min:  0.857
+    score_confidence_4_min:  0.857

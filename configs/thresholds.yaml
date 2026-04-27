@@ -1,0 +1,83 @@
+metrics:
+  temperature:
+
+    ambient_stability:              # R1
+      cv_threshold: 0.55            # AMBIENT_CV_MED  — primary pass/fail boundary
+      cv_high:      0.70            # AMBIENT_CV_HIGH — severe instability veto (~top 5%)
+
+    ambient_range:                  # R2 — recalibrated 2026-04-26 (anchor sets)
+      min_celsius:  5.0             # was 2.0 — perfect-valid min was 5.12; one perfect-invalid (0.75) below
+      max_celsius: 50.0             # unchanged — anchors don't suggest tightening
+
+    bucket_reference_adherence:     # R3 — recalibrated 2026-04-26 (anchor sets)
+      # Per-bucket reference temperature bands. Recalibrated against perfect-example anchors:
+      #   - large.low 28→33.9  : CLEAN GAP between 14 perfect-valid (≥33.95) and 5 perfect-invalid (≤33.45)
+      #   - medium.low 26→27.3 : catches 4/5 perfect-invalids; perfect-valid min was 27.36
+      #   - small.low 23→17.4  : LOOSENED — perfect-valid min was 17.5 (analyst expanded the small range)
+      #   - .high values unchanged — perfect-invalids cluster on the LOW side, not HIGH
+      small:
+        low:  17.4                  # was 23.0 — perfect-valid min was 17.5
+        high: 29.0
+      medium:
+        low:  27.3                  # was 26.0 — perfect-valid min was 27.36; catches 4/5 perfect-invalids
+        high: 32.0
+      large:
+        low:  33.9                  # was 28.0 — CLEAN SEPARATION; catches 5/5 perfect-invalids
+        high: 35.0
+
+    sensor_spread_within_bucket:    # R4 — recalibrated 2026-04-26 (anchor sets) → per-bucket
+      # Was a single threshold (5.0°C) applied uniformly across small/medium/large.
+      # Anchor analysis showed:
+      #   - large bucket has tight spread for valid (0.32–1.00) vs invalid (1.10–2.63) → CLEAN GAP @ 1.05
+      #   - medium/small have naturally wider spread for valids → use loose per-bucket caps
+      # Schema is now per-bucket:
+      small:  8.0                   # loose — perfect-valid up to 7.55; perfect-invalid up to 9.13
+      medium: 8.0                   # loose — perfect-valid up to 7.12 (no clean separation)
+      large:  1.05                  # CLEAN SEPARATION; catches 5/5 perfect-invalids
+
+    bucket_temporal_stability:      # R5 — re-tightened 2026-04-26 against new anchors
+      small_std_max:  2.0           # was 2.5 — perfect-valid up to 1.82; catches 2/5 perfect-invalids
+      medium_std_max: 0.95          # was 2.0 — perfect-valid up to 0.92; catches 3/5 perfect-invalids
+      large_std_max:  0.20          # was 2.5 — perfect-valid up to 0.14; catches 4/5 perfect-invalids
+
+    bucket_diurnal_amplitude:       # R7 — added 2026-04-27 (analyst-anchor calibration)
+      # Mean of daily (max−min) of the hourly bucket-mean. Catches "fake large/medium"
+      # hives that swing too widely across each 24h cycle (R5 misses this — see module docstring).
+      # Calibrated against perfect-anchor sets:
+      #   large : perfect-valid max +10.55, perfect-invalid min +17.37 → CLEAN GAP @ 14.0
+      #   medium: kept loose at 25 (perfect-valid max +20.6 but broader-train valids can exceed 21)
+      #   small : kept loose at 40 (small hives naturally track ambient widely)
+      small:  40.0
+      medium: 25.0
+      large:  14.0
+
+    bucket_temperature_ordering:    # R6c — mandatory gate in decision rule
+      min_gap_celsius: 1.5          # unchanged — anchors don't suggest tightening
+
+    small_hive_ambient_tracking:    # R6a
+      min_correlation: 0.3
+
+    large_hive_thermoregulation:    # R6b
+      max_correlation: 0.85
+
+decision:
+  temperature_health_rule:
+    # Layer 1 sensor_group_segment gate
+    l1_min_pass_rate: 0.85
+
+    # Hard gates (failing any → INVALID, confidence 1)
+    # Recalibrated 2026-04-26: R3 and R4 promoted from score/bonus → gates because
+    # with the new anchor-calibrated thresholds, both achieve clean separation
+    # on the perfect-invalid set (5/5 catch, 0 perfect-valid loss).
+    # Added 2026-04-27: R7 (bucket_diurnal_amplitude) — large.diurnal cleanly
+    # separates perfect-valid (≤10.55°C) from perfect-invalid (≥17.37°C).
+    r6c_mandatory: true             # bucket_temperature_ordering must pass
+    r3_mandatory: true              # bucket_reference_adherence must pass (large.low is the strongest signal)
+    r4_mandatory: true              # sensor_spread_within_bucket must pass (large.spread is the strongest signal)
+    r7_mandatory: true              # bucket_diurnal_amplitude must pass (large.diurnal is the strongest signal)
+
+    # valid_score thresholds — score is now over the 6 NON-GATE metrics:
+    #   {R1, R2, R5, R6a, R6b, ambient_temperature_volatility}
+    # Confidence 5 requires all 6 metrics to pass.
+    score_confidence_5_min: 1.000   # 6/6 → confidence 5
+    score_confidence_4_min: 0.833   # 5/6 → confidence 4 (one allowed miss)

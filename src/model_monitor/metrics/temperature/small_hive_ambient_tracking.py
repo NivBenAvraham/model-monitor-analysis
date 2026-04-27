@@ -55,8 +55,10 @@ dict
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import pandas as pd
+import yaml
 
 from model_monitor.utils.data_utils import resample_sensor_to_hourly, resample_gateway_to_hourly
 
@@ -67,8 +69,14 @@ METRIC_FAMILY: str = "temperature"
 _METRIC_NAME:  str = "small_hive_ambient_tracking"
 _DAYS_PERIOD:  int = 2
 
-# ── Threshold ─────────────────────────────────────────────────────────────────
-SMALL_CORR_MIN: float = 0.3
+# ── Threshold (loaded from configs/thresholds.yaml) ───────────────────────────
+def _load_thresholds() -> dict:
+    path = Path(__file__).resolve().parents[4] / "configs/thresholds.yaml"
+    with open(path) as f:
+        return yaml.safe_load(f)["metrics"]["temperature"]["small_hive_ambient_tracking"]
+
+_cfg = _load_thresholds()
+SMALL_CORR_MIN: float = float(_cfg["min_correlation"])
 
 
 def small_hive_ambient_tracking(

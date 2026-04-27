@@ -58,8 +58,10 @@ dict
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import pandas as pd
+import yaml
 
 from model_monitor.utils.data_utils import resample_sensor_to_hourly
 
@@ -70,11 +72,16 @@ METRIC_FAMILY: str = "temperature"
 _METRIC_NAME:  str = "bucket_reference_adherence"
 _DAYS_PERIOD:  int = 2
 
-# ── Per-bucket temperature bands (°C) ─────────────────────────────────────────
+# ── Per-bucket temperature bands (loaded from configs/thresholds.yaml) ────────
+def _load_thresholds() -> dict:
+    path = Path(__file__).resolve().parents[4] / "configs/thresholds.yaml"
+    with open(path) as f:
+        return yaml.safe_load(f)["metrics"]["temperature"]["bucket_reference_adherence"]
+
+_cfg = _load_thresholds()
 BUCKET_REFS: dict[str, dict[str, float]] = {
-    "small":  {"low": 23.0, "high": 29.0},   # [26 ± BAND] — small tracks ambient near 26 °C
-    "medium": {"low": 26.0, "high": 32.0},
-    "large":  {"low": 28.0, "high": 35.0},
+    bucket: {"low": float(bands["low"]), "high": float(bands["high"])}
+    for bucket, bands in _cfg.items()
 }
 
 

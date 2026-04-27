@@ -29,13 +29,14 @@ Algorithm
    c. If std > threshold for that bucket → that bucket fails.
 3. The overall result pass_metric=True only when *every present* bucket passes.
 
-Thresholds (from 2026-04-15 decide.py)
----------------------------------------
+Thresholds (configs/thresholds.yaml → metrics.temperature.bucket_temporal_stability)
+-------------------------------------------------------------------------------------
 TEMPORAL_STD_MAX = {
-    "small":  7.0,
-    "medium": 4.0,
-    "large":  2.5,
+    "small":  2.5,   # tightened 2026-04-26 from 7.0 (train valid p90 = 2.19°C)
+    "medium": 2.0,   # tightened 2026-04-26 from 4.0 (train valid p90 = 1.29°C)
+    "large":  2.5,   # unchanged
 }
+See configs/thresholds_history/2026-04-26_original.yaml for prior values.
 
 Family
 ------
@@ -62,8 +63,10 @@ dict
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import pandas as pd
+import yaml
 
 from model_monitor.utils.data_utils import resample_sensor_to_hourly
 
@@ -74,13 +77,17 @@ METRIC_FAMILY: str = "temperature"
 _METRIC_NAME:  str = "bucket_temporal_stability"
 _DAYS_PERIOD:  int = 2
 
-# ── Per-bucket temporal-stability thresholds (°C std across daily means) ──────
-# High-water-mark values from decide.py TEMPORAL_THRESHOLDS (the HIGH level per bucket).
-# Exceeding these marks is the primary invalid signal for temporal instability.
+# ── Per-bucket temporal-stability thresholds (loaded from configs/thresholds.yaml) ──
+def _load_thresholds() -> dict:
+    path = Path(__file__).resolve().parents[4] / "configs/thresholds.yaml"
+    with open(path) as f:
+        return yaml.safe_load(f)["metrics"]["temperature"]["bucket_temporal_stability"]
+
+_cfg = _load_thresholds()
 TEMPORAL_STD_MAX: dict[str, float] = {
-    "small":  7.0,   # small follows ambient → high natural variation tolerated
-    "medium": 4.0,   # medium is semi-regulated
-    "large":  2.5,   # large must hold a flat line → tightest tolerance
+    "small":  float(_cfg["small_std_max"]),    # tightened 2026-04-26: was 7.0
+    "medium": float(_cfg["medium_std_max"]),   # tightened 2026-04-26: was 4.0
+    "large":  float(_cfg["large_std_max"]),    # large must hold a flat line → tightest tolerance
 }
 
 
