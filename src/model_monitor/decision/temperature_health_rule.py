@@ -6,29 +6,29 @@ Priority: minimise FP (invalid groups called VALID) above all else.
 
 Decision logic
 --------------
-Step 1 — Mandatory gates (R6c, R3, R4, R7)
+Step 1 — Mandatory gates (ATV, R3, R5, R7)
     All four must pass.  Failing ANY gate → INVALID, confidence 1.
 
-    R6c bucket_temperature_ordering — physical ordering of bucket means.
-    R3  bucket_reference_adherence  — bucket means inside per-bucket reference bands.
-    R4  sensor_spread_within_bucket — per-bucket sensor-mean spread under cap.
-    R7  bucket_diurnal_amplitude    — per-bucket within-day swing under cap.
+    ATV  ambient_temperature_volatility — night-to-night ambient stability.
+    R3   bucket_reference_adherence     — bucket means inside per-bucket reference bands.
+    R5   bucket_temporal_stability      — bucket daily-mean std within per-bucket cap.
+    R7   bucket_diurnal_amplitude       — per-bucket within-day swing under cap.
 
-    Each gate delivers a clean separation between perfect-valid and
-    perfect-invalid anchors on at least one bucket:
-      • R3  large.low      ≥ 33.9   catches 5/5 perfect-invalids (clean gap)
-      • R4  large.spread   ≤ 1.05   catches 5/5 perfect-invalids (clean gap)
-      • R7  large.diurnal  ≤ 14.0   catches 5/5 perfect-invalids (clean gap)
-      • R6c always passes the perfect anchor set, so it's a sanity gate
+    Gate set chosen 2026-04-27 via exhaustive anchor-constrained search over all
+    847 combinations of 1–7 gates from 10 metrics.  Only combinations that
+    perfectly separate all 19 anchor pairs (14 valid, 5 invalid) were kept (438).
+    The winner on the full train set with 1miss_ok scoring:
+      ATV + R3 + R5 + R7  →  TP=80  FP=11  P=0.879  Sp=0.929
+      (prior R6c+R3+R4+R7 →  TP=72  FP=11  P=0.867  Sp=0.857)
 
 Step 2 — valid_score over 6 NON-GATE metrics
     scored_metrics = {
-        ambient_stability,
-        ambient_range,
-        bucket_temporal_stability,
-        small_hive_ambient_tracking,
-        large_hive_thermoregulation,
-        ambient_temperature_volatility,
+        ambient_stability      (R1),
+        ambient_range          (R2),
+        sensor_spread_within_bucket (R4),
+        small_hive_ambient_tracking (R6a),
+        large_hive_thermoregulation (R6b),
+        bucket_temperature_ordering (R6c),
     }
     valid_score = pass_count / n_assessed.
 
@@ -57,11 +57,11 @@ _REPO_ROOT       = Path(__file__).resolve().parents[3]
 _THRESHOLDS_PATH = _REPO_ROOT / "configs/thresholds.yaml"
 
 # Mandatory gate metric names
-_R6C_GATE = "bucket_temperature_ordering"
+_ATV_GATE = "ambient_temperature_volatility"
 _R3_GATE  = "bucket_reference_adherence"
-_R4_GATE  = "sensor_spread_within_bucket"
+_R5_GATE  = "bucket_temporal_stability"
 _R7_GATE  = "bucket_diurnal_amplitude"
-_GATES    = (_R6C_GATE, _R3_GATE, _R4_GATE, _R7_GATE)
+_GATES    = (_ATV_GATE, _R3_GATE, _R5_GATE, _R7_GATE)
 
 
 def _load_thresholds() -> dict:
@@ -113,9 +113,9 @@ def score_group_date(
     l1_min         = float(cfg["l1_min_pass_rate"])
     conf5_min      = float(cfg["score_confidence_5_min"])
     conf4_min      = float(cfg["score_confidence_4_min"])
-    r6c_mandatory  = bool(cfg.get("r6c_mandatory", True))
+    atv_mandatory  = bool(cfg.get("atv_mandatory", True))
     r3_mandatory   = bool(cfg.get("r3_mandatory",  True))
-    r4_mandatory   = bool(cfg.get("r4_mandatory",  True))
+    r5_mandatory   = bool(cfg.get("r5_mandatory",  True))
     r7_mandatory   = bool(cfg.get("r7_mandatory",  True))
 
     by_name: dict[str, bool | None] = {
@@ -125,9 +125,9 @@ def score_group_date(
 
     # ── Step 1: mandatory gates ────────────────────────────────────────────────
     gate_active = {
-        _R6C_GATE: r6c_mandatory,
+        _ATV_GATE: atv_mandatory,
         _R3_GATE:  r3_mandatory,
-        _R4_GATE:  r4_mandatory,
+        _R5_GATE:  r5_mandatory,
         _R7_GATE:  r7_mandatory,
     }
     gate_results: dict[str, bool | None] = {}

@@ -2,28 +2,28 @@
 
 from model_monitor.decision import ModelHealth, score_group_date
 
-_R6C = "bucket_temperature_ordering"
+_ATV = "ambient_temperature_volatility"
 _R3  = "bucket_reference_adherence"
-_R4  = "sensor_spread_within_bucket"
+_R5  = "bucket_temporal_stability"
 _R7  = "bucket_diurnal_amplitude"
-_GATES = (_R6C, _R3, _R4, _R7)
+_GATES = (_ATV, _R3, _R5, _R7)
 _SCORE = [
     "ambient_stability",
     "ambient_range",
-    "ambient_temperature_volatility",
-    "bucket_temporal_stability",
+    "sensor_spread_within_bucket",
     "small_hive_ambient_tracking",
     "large_hive_thermoregulation",
+    "bucket_temperature_ordering",
 ]   # 6 non-gate metrics
 
 
-def _metrics(*, r6c: bool = True, r3: bool = True, r4: bool = True, r7: bool = True,
+def _metrics(*, atv: bool = True, r3: bool = True, r5: bool = True, r7: bool = True,
              score_pass: int = 6) -> list[dict]:
     """Build a full 10-metric result list for testing."""
     results = [
-        {"metric_name": _R6C, "pass_metric": r6c},
+        {"metric_name": _ATV, "pass_metric": atv},
         {"metric_name": _R3,  "pass_metric": r3},
-        {"metric_name": _R4,  "pass_metric": r4},
+        {"metric_name": _R5,  "pass_metric": r5},
         {"metric_name": _R7,  "pass_metric": r7},
     ]
     results += [
@@ -39,13 +39,13 @@ def test_model_health_values() -> None:
     assert ModelHealth.INVALID           == "INVALID"
 
 
-def test_r6c_gate_fail_returns_invalid() -> None:
-    """R6c failing must produce INVALID regardless of other metrics."""
-    result = score_group_date(_metrics(r6c=False))
+def test_atv_gate_fail_returns_invalid() -> None:
+    """ATV failing must produce INVALID regardless of other metrics."""
+    result = score_group_date(_metrics(atv=False))
     assert result["prediction"]    == "INVALID"
     assert result["confidence"]    == 1
-    assert _R6C in result["failed_gates"]
-    assert result["gate_results"][_R6C] is False
+    assert _ATV in result["failed_gates"]
+    assert result["gate_results"][_ATV] is False
 
 
 def test_r3_gate_fail_returns_invalid() -> None:
@@ -56,12 +56,12 @@ def test_r3_gate_fail_returns_invalid() -> None:
     assert _R3 in result["failed_gates"]
 
 
-def test_r4_gate_fail_returns_invalid() -> None:
-    """R4 failing must produce INVALID regardless of other metrics."""
-    result = score_group_date(_metrics(r4=False))
+def test_r5_gate_fail_returns_invalid() -> None:
+    """R5 failing must produce INVALID regardless of other metrics."""
+    result = score_group_date(_metrics(r5=False))
     assert result["prediction"]    == "INVALID"
     assert result["confidence"]    == 1
-    assert _R4 in result["failed_gates"]
+    assert _R5 in result["failed_gates"]
 
 
 def test_r7_gate_fail_returns_invalid() -> None:
@@ -83,7 +83,7 @@ def test_all_gates_and_score_pass_confidence_5() -> None:
 
 
 def test_one_score_miss_drops_to_confidence_4() -> None:
-    """All gates pass + 5/6 scored → confidence 4 (one allowed miss)."""
+    """All gates pass + 5/6 scored → confidence 4 (one allowed miss, still VALID)."""
     result = score_group_date(_metrics(score_pass=5))
     assert result["prediction"]  == "VALID"
     assert result["confidence"]  == 4
@@ -100,9 +100,9 @@ def test_two_score_misses_returns_invalid() -> None:
 def test_score_metrics_exclude_none() -> None:
     """pass_metric=None is excluded from denominator."""
     results = [
-        {"metric_name": _R6C, "pass_metric": True},
+        {"metric_name": _ATV, "pass_metric": True},
         {"metric_name": _R3,  "pass_metric": True},
-        {"metric_name": _R4,  "pass_metric": True},
+        {"metric_name": _R5,  "pass_metric": True},
         {"metric_name": _R7,  "pass_metric": True},
         {"metric_name": "ambient_stability",  "pass_metric": True},
         {"metric_name": "ambient_range",      "pass_metric": None},

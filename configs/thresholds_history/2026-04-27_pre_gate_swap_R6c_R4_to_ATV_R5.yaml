@@ -1,3 +1,29 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# THRESHOLDS HISTORY SNAPSHOT — pre gate-swap R6c+R4 → ATV+R5 (2026-04-27)
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# Reason for change
+# -----------------
+# Exhaustive search over all 847 gate combinations (1–7 gates from 10 metrics),
+# constrained to combinations that perfectly separate the 19 anchor pairs
+# (14 valid, 5 invalid), then evaluated on the full train set with three
+# scoring methods (all_pass, 1miss_ok, majority).
+#
+# Winner: gates = {ATV, R3, R5, R7} with 1miss_ok scoring (score >= 5/6)
+#   TP=80  FP=11  P=0.879  Sp=0.929  vs. prior {R6c, R3, R4, R7} + all_pass
+#   TP=72  FP=11  P=0.867  Sp=0.857
+#
+# Key insight: with the new gates, confidence-4 (5/6 scored pass) adds 8 TPs
+# with ZERO extra FPs compared to confidence-5 (all scored pass). This happens
+# because R6b (large_hive_thermoregulation) is the only scored metric that
+# causes misses, and those misses are on genuine VALID groups.
+#
+# Gate removed  : bucket_temperature_ordering (R6c) — weak anchor separator
+# Gate removed  : sensor_spread_within_bucket (R4)  — weak anchor separator
+# Gate added    : ambient_temperature_volatility (ATV) — strong separator
+# Gate added    : bucket_temporal_stability (R5) — strong separator
+# ──────────────────────────────────────────────────────────────────────────────
+
 metrics:
   temperature:
 
@@ -66,22 +92,18 @@ decision:
     l1_min_pass_rate: 0.85
 
     # Hard gates (failing any → INVALID, confidence 1)
-    # Gate set chosen 2026-04-27 via exhaustive anchor-constrained search:
-    #   - 847 combinations (1–7 gates from 10 metrics) evaluated
-    #   - Only combos that perfectly separate all 19 anchor pairs kept (438 valid)
-    #   - Best 4-gate combo on train: ATV + R3 + R5 + R7, with 1miss_ok scoring
-    #     TP=80 FP=11 P=0.879 Sp=0.929 (vs. prior R6c+R3+R4+R7: TP=72 FP=11 P=0.867)
-    #
-    # Gates removed: bucket_temperature_ordering (R6c), sensor_spread_within_bucket (R4)
-    # Gates added  : ambient_temperature_volatility (ATV), bucket_temporal_stability (R5)
-    atv_mandatory: true             # ambient_temperature_volatility must pass
-    r3_mandatory: true              # bucket_reference_adherence must pass (large.low strongest signal)
-    r5_mandatory: true              # bucket_temporal_stability must pass (strong anchor separator)
-    r7_mandatory: true              # bucket_diurnal_amplitude must pass (large.diurnal strongest signal)
+    # Recalibrated 2026-04-26: R3 and R4 promoted from score/bonus → gates because
+    # with the new anchor-calibrated thresholds, both achieve clean separation
+    # on the perfect-invalid set (5/5 catch, 0 perfect-valid loss).
+    # Added 2026-04-27: R7 (bucket_diurnal_amplitude) — large.diurnal cleanly
+    # separates perfect-valid (≤10.55°C) from perfect-invalid (≥17.37°C).
+    r6c_mandatory: true             # bucket_temperature_ordering must pass
+    r3_mandatory: true              # bucket_reference_adherence must pass (large.low is the strongest signal)
+    r4_mandatory: true              # sensor_spread_within_bucket must pass (large.spread is the strongest signal)
+    r7_mandatory: true              # bucket_diurnal_amplitude must pass (large.diurnal is the strongest signal)
 
     # valid_score thresholds — score is now over the 6 NON-GATE metrics:
-    #   {R1(ambient_stability), R2(ambient_range), R4(sensor_spread_within_bucket),
-    #    R6a(small_hive_ambient_tracking), R6b(large_hive_thermoregulation), R6c(bucket_temperature_ordering)}
-    # With the new gates, conf-4 (1 miss ok) adds 8 TPs with ZERO extra FPs vs conf-5.
-    score_confidence_5_min: 1.000   # 6/6 → confidence 5  (72 TP, 11 FP)
-    score_confidence_4_min: 0.833   # 5/6 → confidence 4  (80 TP, 11 FP, one miss allowed)
+    #   {R1, R2, R5, R6a, R6b, ambient_temperature_volatility}
+    # Confidence 5 requires all 6 metrics to pass.
+    score_confidence_5_min: 1.000   # 6/6 → confidence 5
+    score_confidence_4_min: 0.833   # 5/6 → confidence 4 (one allowed miss)
