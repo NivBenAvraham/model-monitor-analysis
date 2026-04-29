@@ -6,40 +6,44 @@ Priority: minimise FP (invalid groups called VALID) above all else.
 
 Decision logic
 --------------
-Step 1 — Mandatory gates (ATV, R3, R5, R7)
-    All four must pass.  Failing ANY gate → INVALID, confidence 1.
 
-    ATV  ambient_temperature_volatility — night-to-night ambient stability.
+Step 1 — 4 Mandatory gates (ATV, R3, R5, R7)
+    ANY gate fails  →  INVALID, confidence 1  (no scoring done).
+    ALL gates pass  →  proceed to Step 2.
+
+    ATV  ambient_temperature_volatility — night-to-night ambient jump check.
     R3   bucket_reference_adherence     — bucket means inside per-bucket reference bands.
     R5   bucket_temporal_stability      — bucket daily-mean std within per-bucket cap.
     R7   bucket_diurnal_amplitude       — per-bucket within-day swing under cap.
 
-    Gate set chosen 2026-04-27 via exhaustive anchor-constrained search over all
-    847 combinations of 1–7 gates from 10 metrics.  Only combinations that
-    perfectly separate all 19 anchor pairs (14 valid, 5 invalid) were kept (438).
-    The winner on the full train set with 1miss_ok scoring:
-      ATV + R3 + R5 + R7  →  TP=80  FP=11  P=0.879  Sp=0.929
-      (prior R6c+R3+R4+R7 →  TP=72  FP=11  P=0.867  Sp=0.857)
+    Gate set chosen 2026-04-27 via exhaustive anchor-constrained search (847 combos).
+    Perfectly separates all 19 analyst anchor pairs (14 valid, 5 invalid).
+    Train result: TP=80  FP=11  Precision=0.879  Specificity=0.929
+    Test result:  TP=27  FP=6   Precision=0.818  Specificity=0.885
 
-Step 2 — valid_score over 6 NON-GATE metrics
-    scored_metrics = {
-        ambient_stability      (R1),
-        ambient_range          (R2),
-        sensor_spread_within_bucket (R4),
-        small_hive_ambient_tracking (R6a),
-        large_hive_thermoregulation (R6b),
-        bucket_temperature_ordering (R6c),
-    }
-    valid_score = pass_count / n_assessed.
+Step 2 — Score 6 non-gate metrics
+    R1   ambient_stability
+    R2   ambient_range
+    R4   sensor_spread_within_bucket
+    R6a  small_hive_ambient_tracking
+    R6b  large_hive_thermoregulation
+    R6c  bucket_temperature_ordering
 
-Step 3 — confidence mapping
-    valid_score >= score_confidence_5_min   →  confidence 5, prediction VALID
-    valid_score >= score_confidence_4_min   →  confidence 4, prediction VALID
-    otherwise                               →  confidence ≤ 3, prediction INVALID
+    valid_score = pass_count / n_assessed  (None metrics excluded from denominator).
 
-Step 4 — Layer 1 gate (optional)
-    If l1_pct_pass < l1_min_pass_rate → cap confidence at 2, prediction INVALID.
-    Skip if l1_pct_pass is None (Layer 1 results unavailable).
+    The effective threshold is 5/6 — both confidence 4 and confidence 5 predict VALID.
+    Confidence is informational only; the binary prediction is what matters.
+
+    valid_score = 6/6  →  VALID, confidence 5
+    valid_score = 5/6  →  VALID, confidence 4
+    valid_score ≤ 4/6  →  INVALID, confidence 1–3
+
+    Why 5/6 and not 6/6:
+      Requiring 6/6 gives TP=72 with the same 11 FPs.
+      Allowing one miss (5/6) recovers 8 TPs at zero precision cost.
+      The 6 scored metrics have near-zero discriminating power on the
+      remaining FPs (all 11 pass every scored metric at 100%) — so the
+      scoring layer only affects recall, never precision.
 
 All thresholds come from configs/thresholds.yaml — never hardcoded here.
 """
@@ -81,25 +85,25 @@ def score_group_date(
         List of dicts, one per temperature metric.  Each dict must contain at
         minimum: ``metric_name`` (str) and ``pass_metric`` (bool | None).
         ``pass_metric=None`` means the metric could not be assessed — excluded
-        from the denominator of valid_score.
+        from the scored denominator.
     l1_pct_pass:
-        Fraction of sensors that passed the Layer 1 sensor_group_segment check
-        (value in [0, 1]).  Pass ``None`` to skip the L1 gate.
+        Not yet connected — always pass None.  Reserved for future Layer 1
+        sensor_group_segment integration.
 
     Returns
     -------
     dict with keys:
+        ``prediction``     — "VALID" or "INVALID" (the only output that matters).
+        ``confidence``     — int 1–5, informational (4 and 5 both mean VALID).
+        ``failed_gates``   — list[str], gate metrics that returned False.
+        ``gate_results``   — dict {gate_name: bool | None}.
+        ``valid_score``    — float in [0, 1], pass_count / n_assessed.
         ``pass_count``     — int, scored (non-gate) metrics that passed.
         ``n_assessed``     — int, scored metrics with a non-None result.
-        ``valid_score``    — float in [0, 1], pass_count / n_assessed.
-        ``gate_results``   — dict {gate_name: bool | None}.
-        ``failed_gates``   — list[str], gate metrics that returned False.
-        ``l1_pct_pass``    — float | None, echoed back.
-        ``l1_gate_pass``   — bool, whether the L1 gate was met.
-        ``confidence``     — int 1–5 (5 = most confident VALID).
-        ``prediction``     — "VALID" or "INVALID".
         ``metrics_failed`` — list[str], scored metrics that returned False.
         ``metrics_error``  — list[str], metrics (any role) that returned None.
+        ``l1_pct_pass``    — float | None, echoed back.
+        ``l1_gate_pass``   — bool, always True until L1 is connected.
 
     Raises
     ------
@@ -188,18 +192,20 @@ def score_group_date(
     valid_score = pass_count / n_assessed if n_assessed > 0 else 0.0
 
     # ── Step 3: confidence mapping ─────────────────────────────────────────────
-    if valid_score >= conf5_min:
+    # Effective threshold is 5/6 — both conf 4 and conf 5 predict VALID.
+    # Confidence is informational; the binary prediction is what matters.
+    if valid_score >= conf5_min:      # 6/6
         confidence = 5
         prediction = "VALID"
-    elif valid_score >= conf4_min:
+    elif valid_score >= conf4_min:    # 5/6 — one miss allowed
         confidence = 4
         prediction = "VALID"
-    else:
+    else:                             # ≤ 4/6
         gap        = int((conf4_min - valid_score) * n_assessed) + 1
         confidence = max(1, 3 - gap)
         prediction = "INVALID"
 
-    # ── Step 4: Layer 1 gate ───────────────────────────────────────────────────
+    # ── Layer 1 gate (not yet connected — l1_pct_pass is always None) ─────────
     if l1_pct_pass is None:
         l1_gate_pass = True
     else:
