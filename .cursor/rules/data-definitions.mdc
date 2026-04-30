@@ -13,12 +13,19 @@ Credentials expire every **4 hours**. Before running any script or notebook that
 source scripts/refresh_aws_credentials.sh
 ```
 
-This sets:
-- `AWS_ARTIFACT_TOKEN` — CodeArtifact token from `beehero` domain (us-east-1)
-- `UV_INDEX_BEEHERO_PYPI_USERNAME` — `aws`
-- `UV_INDEX_BEEHERO_PYPI_PASSWORD` — the token above
+Use `source` (not `bash`) so the exports apply to your current shell session.
 
-### Athena Connection Config
+---
+
+## Athena Access — `skills/data_lake`
+
+All Athena reads go through `skills/data_lake/scripts/connection.py`.
+**Never hardcode connection strings or table names in other scripts.**
+
+```python
+from skills.data_lake.scripts.connection import read_curated, read_raw, AthenaSession, make_reader
+from skills.data_lake.scripts.catalog    import CURATED, RAW, sample, describe_table
+```
 
 | Setting | Value |
 |---|---|
@@ -28,7 +35,7 @@ This sets:
 | `CURATED_DATABASE` | `data_lake_curated_data` |
 | `RAW_DATABASE` | `data_lake_raw_data` |
 
-Use `source` (not `bash`) so the exports apply to your current shell session.
+**Thread safety:** `read_curated` / `read_raw` / `make_reader` use `threading.local()` — safe inside `ThreadPoolExecutor`. Use `AthenaSession` for single-threaded scripts that need explicit cleanup.
 
 ---
 In BeeHero world we have two types of groups that both called 'group_id' : Beekeeper and Grower.

@@ -1,0 +1,179 @@
+DATA LAKE — Skill Specification
+═══════════════════════════════════════════════════════════════════════
+
+PURPOSE
+───────
+Central connection and table catalog layer for all Athena data lake access.
+Every other skill or script that reads from AWS Athena should import from here —
+not hardcode connection strings, database names, or table names.
+
+Databases
+  data_lake_curated_data  — cleaned, joined, production-ready tables
+  data_lake_raw_data      — raw model run logs and device metadata
+
+
+═══════════════════════════════════════════════════════════════════════
+CONNECTION CONFIG
+═══════════════════════════════════════════════════════════════════════
+
+  S3_STAGING_DIR   s3://us-east-1-data-analytics-storage/athena-query-results/
+  REGION           us-east-1
+  WORKGROUP        data_analytics
+  CURATED_DATABASE data_lake_curated_data
+  RAW_DATABASE     data_lake_raw_data
+
+Credentials expire every 4 hours.
+Refresh with:  source scripts/refresh_aws_credentials.sh
+
+
+═══════════════════════════════════════════════════════════════════════
+THREAD SAFETY
+═══════════════════════════════════════════════════════════════════════
+
+pyathena connections are NOT thread-safe.
+
+connection.py handles this via threading.local():
+  - get_connection(database) returns a per-thread connection
+  - Connections are created once per thread and reused
+  - Safe to use inside ThreadPoolExecutor workers
+
+For scripts that run once and exit, AthenaSession context manager is
+cleaner — opens fresh connections and closes them on __exit__.
+
+
+═══════════════════════════════════════════════════════════════════════
+TABLES — data_lake_curated_data
+═══════════════════════════════════════════════════════════════════════
+
+─────────────────────────────────────────────────────────────────
+sensor_samples
+─────────────────────────────────────────────────────────────────
+  sensor_mac_address   string
+  timestamp            timestamp
+  pcb_temperature_one  double    hive internal temperature (°C)
+  gateway_mac_address  string
+  humidity             double
+
+Query window: use [date - 2 days, date) for one evaluation date.
+
+─────────────────────────────────────────────────────────────────
+gateway_samples
+─────────────────────────────────────────────────────────────────
+  gateway_mac_address  string
+  timestamp            timestamp
+  pcb_temperature_two  double    ambient (outdoor) temperature (°C)
+  acceleration_x/y/z   double
+  (no hardware_extensions — join data_lake_raw_data.gateways for that)
+
+Filter: drop rows where (acceleration_x = acceleration_y = acceleration_z = 0)
+        — indicates static / malfunctioning hardware.
+
+─────────────────────────────────────────────────────────────────
+hive_updates_metadata
+─────────────────────────────────────────────────────────────────
+  created              timestamp
+  sensor_mac_address   string
+  router_s3_pkl_file   string    model / lambda name
+  model                string    always 'BEE_FRAMES' for bee-frames model
+
+─────────────────────────────────────────────────────────────────
+sensor_daily_snapshot
+─────────────────────────────────────────────────────────────────
+  mac       string    sensor_mac_address
+  date      date
+  group_id  bigint
+  yard_id   bigint
+
+Used to join sensor → group_id and sensor → yard_id.
+
+─────────────────────────────────────────────────────────────────
+yard_updates
+─────────────────────────────────────────────────────────────────
+  yard_id           bigint
+  bee_frames        double
+  valid_hives_count bigint
+  created           timestamp
+  last_hive_update  timestamp
+
+─────────────────────────────────────────────────────────────────
+beekeeper_beeframe_model_monitoring_preprocess
+─────────────────────────────────────────────────────────────────
+  mac, date, run_date, model_name, pred_raw, group_id, yard_id,
+  group_in_season, groups_in_season_ready_for_review, run_timestamp
+
+  NOTE: always use latest run_timestamp per (mac, date, model_name) via row_number().
+
+─────────────────────────────────────────────────────────────────
+beekeeper_beeframe_model_monitoring_validations
+─────────────────────────────────────────────────────────────────
+  timestamp, group_id, tier1_status, tier2_status
+
+─────────────────────────────────────────────────────────────────
+ops_inspections
+─────────────────────────────────────────────────────────────────
+  sensor_mac_address, utc_timestamp, total_bee_frames, group_id, yard_id
+
+─────────────────────────────────────────────────────────────────
+daily_hive_health_monitoring
+─────────────────────────────────────────────────────────────────
+  sensor_mac_address, run_date, is_healthy, group_id, yard_id
+
+
+═══════════════════════════════════════════════════════════════════════
+TABLES — data_lake_raw_data
+═══════════════════════════════════════════════════════════════════════
+
+─────────────────────────────────────────────────────────────────
+supervised_beeframes  /  unified_bee_frames  (TABLE SWITCH — IMPORTANT)
+─────────────────────────────────────────────────────────────────
+Both tables have identical structure.
+
+  date < 2026-03-10  →  supervised_beeframes
+  date ≥ 2026-03-10  →  unified_bee_frames
+
+NEVER hardcode either name. Use raw_bee_frames_table(date) from
+  skills/temperature_data_export/scripts/queries.py
+or
+  src/model_monitor/ingestion/__init__.py
+
+Columns:
+  sensor_mac_address   string
+  pred_raw             double    raw bee_frames prediction
+  lambda_name          string    model identifier (full path)
+  log_timestamp        timestamp
+
+Dedup pattern (always needed):
+  row_number() OVER (
+      PARTITION BY sensor_mac_address, date(log_timestamp), lambda_name
+      ORDER BY log_timestamp DESC
+  ) = 1
+
+─────────────────────────────────────────────────────────────────
+gateways
+─────────────────────────────────────────────────────────────────
+  mac                  string    gateway_mac_address
+  hardware_extensions  string    non-empty → hardware extension attached
+
+Join to gateway_samples to derive hardware_extension_present.
+
+
+═══════════════════════════════════════════════════════════════════════
+FILES
+═══════════════════════════════════════════════════════════════════════
+
+  scripts/connection.py   Athena connection factory
+                            read_curated(sql)       → DataFrame
+                            read_raw(sql)           → DataFrame
+                            read(sql, database)     → DataFrame
+                            get_connection(db)      → thread-local connection
+                            make_reader(db)         → Callable[[str], DataFrame]
+                            AthenaSession           → context manager
+
+  scripts/catalog.py      Table name constants + schema reference
+                            CURATED.*               table name constants
+                            RAW.*                   table name constants
+                            SCHEMA                  dict of column → type
+                            list_tables(database)   → DataFrame (live)
+                            describe_table(t, db)   → DataFrame (live)
+                            sample(t, db, n)        → DataFrame (live)
+                            schema(table)           → dict (local reference)
