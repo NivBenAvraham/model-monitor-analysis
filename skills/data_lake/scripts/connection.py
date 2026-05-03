@@ -1,6 +1,13 @@
 """
 Athena connection factory for data_lake_curated_data and data_lake_raw_data.
 
+Performance
+───────────
+Uses PandasCursor throughout — it downloads the Athena result file from S3
+and converts it to a DataFrame in one shot, instead of iterating row by row.
+This is typically 5–20× faster than pd.read_sql with DefaultCursor and also
+eliminates the pandas "Other DBAPI2 objects are not tested" warning.
+
 Provides simple read helpers that any script or notebook can import:
 
     from skills.data_lake.scripts.connection import read_curated, read_raw
@@ -13,19 +20,19 @@ Or use the context-manager for explicit connection lifetime:
 
 Thread safety
 ─────────────
-pyathena connections are NOT thread-safe.
-Use get_connection() inside ThreadPoolExecutor workers — it returns a
-per-thread connection via threading.local(), so each thread owns its own.
+PandasCursor is NOT thread-safe at the cursor level.
+get_connection() returns a thread-local connection via threading.local()
+so each thread owns its own connection and cursor — safe in ThreadPoolExecutor.
 """
 
 from __future__ import annotations
 
 import threading
-from contextlib import contextmanager
 from typing import Callable
 
 import pandas as pd
 from pyathena import connect
+from pyathena.pandas.cursor import PandasCursor
 
 # ---------------------------------------------------------------------------
 # Athena config
@@ -44,7 +51,7 @@ _local = threading.local()
 
 def get_connection(database: str):
     """
-    Return a thread-local pyathena connection for the given database.
+    Return a thread-local pyathena PandasCursor connection for the given database.
     Creates it on first access; reuses on subsequent calls within the same thread.
 
     Parameters
@@ -58,24 +65,30 @@ def get_connection(database: str):
             region_name=REGION,
             schema_name=database,
             work_group=WORKGROUP,
+            cursor_class=PandasCursor,
         )
         setattr(_local, key, conn)
     return getattr(_local, key)
 
 
+def _exec(sql: str, database: str) -> pd.DataFrame:
+    """Core execute — uses PandasCursor.as_pandas() for bulk S3 download."""
+    return get_connection(database).cursor().execute(sql).as_pandas()
+
+
 def read_curated(sql: str) -> pd.DataFrame:
     """Execute SQL against data_lake_curated_data and return a DataFrame."""
-    return pd.read_sql(sql, get_connection(CURATED_DATABASE))
+    return _exec(sql, CURATED_DATABASE)
 
 
 def read_raw(sql: str) -> pd.DataFrame:
     """Execute SQL against data_lake_raw_data and return a DataFrame."""
-    return pd.read_sql(sql, get_connection(RAW_DATABASE))
+    return _exec(sql, RAW_DATABASE)
 
 
 def read(sql: str, database: str) -> pd.DataFrame:
     """Execute SQL against any database by name."""
-    return pd.read_sql(sql, get_connection(database))
+    return _exec(sql, database)
 
 
 # ---------------------------------------------------------------------------
@@ -107,12 +120,14 @@ class AthenaSession:
             region_name=REGION,
             schema_name=CURATED_DATABASE,
             work_group=WORKGROUP,
+            cursor_class=PandasCursor,
         )
         self._raw = connect(
             s3_staging_dir=S3_STAGING_DIR,
             region_name=REGION,
             schema_name=RAW_DATABASE,
             work_group=WORKGROUP,
+            cursor_class=PandasCursor,
         )
         return self
 
@@ -125,14 +140,14 @@ class AthenaSession:
                 pass
 
     def read_curated(self, sql: str) -> pd.DataFrame:
-        return pd.read_sql(sql, self._curated)
+        return self._curated.cursor().execute(sql).as_pandas()
 
     def read_raw(self, sql: str) -> pd.DataFrame:
-        return pd.read_sql(sql, self._raw)
+        return self._raw.cursor().execute(sql).as_pandas()
 
     def read(self, sql: str, database: str) -> pd.DataFrame:
         conn = self._curated if database == CURATED_DATABASE else self._raw
-        return pd.read_sql(sql, conn)
+        return conn.cursor().execute(sql).as_pandas()
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +165,6 @@ def make_reader(database: str) -> Callable[[str], pd.DataFrame]:
     df = read("SELECT * FROM sensor_samples LIMIT 10")
     """
     def _reader(sql: str) -> pd.DataFrame:
-        return pd.read_sql(sql, get_connection(database))
+        return _exec(sql, database)
     _reader.__doc__ = f"Read SQL from {database}."
     return _reader

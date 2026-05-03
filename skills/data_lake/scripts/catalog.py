@@ -108,6 +108,7 @@ SCHEMA: dict[str, dict[str, str]] = {
         "run_date":                         "date",
         "model_name":                       "string",
         "pred_raw":                         "double",
+        "pred_clipped":                     "double",
         "group_id":                         "bigint",
         "yard_id":                          "bigint",
         "group_in_season":                  "boolean",
