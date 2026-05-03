@@ -1,645 +1,645 @@
 date,group_id,status,reviewer_notes
-2026-02-08,36,invalid,messy ambient,
-2026-02-09,36,valid,
-2026-02-10,36,needs_recalibration,
-2026-02-16,36,valid,other
-2026-02-17,36,valid,other
-2026-02-18,36,valid,not perfect
-2026-02-19,36,valid,
-2026-02-22,36,needs_recalibration,
-2026-02-26,36,invalid,Ambient transition
-2026-03-03,36,valid,
-2026-03-08,36,valid,
-2026-03-09,36,valid,
-2026-01-25,47,valid,
-2026-01-26,47,valid,
-2026-02-09,47,needs_recalibration,
-2026-02-12,47,valid,
-2026-02-17,47,needs_recalibration,other
-2026-02-20,47,valid,
-2026-02-24,47,valid,
-2026-02-26,47,needs_recalibration,
-2026-02-22,48,valid,
-2026-03-01,48,valid,
-2026-03-16,48,needs_recalibration,other
-2026-02-16,163,valid,other
-2026-02-24,163,valid,
-2026-02-25,163,valid,
-2026-02-26,163,invalid,Ambient transition
-2026-03-01,163,valid,
-2026-03-02,163,valid,
-2026-03-03,163,valid,
-2026-03-08,163,valid,
-2026-03-11,163,valid,unbalanced_configuration
-2026-01-24,395,needs_recalibration,
-2026-02-08,395,needs_recalibration,
-2026-02-11,395,needs_recalibration,
-2026-02-26,395,invalid,Ambient transition
-2026-02-28,395,needs_recalibration,Still hot gateways
-2026-03-03,395,invalid,Ambient transition
-2026-03-09,395,valid,
-2026-03-10,395,valid,weak_hives_in_medium_bin
-2026-03-11,395,valid,other
-2026-03-12,395,valid,other:Some ambient transition
-2026-03-22,395,valid,unbalanced_configuration
-2026-02-10,483,needs_recalibration,
-2026-02-15,483,invalid,data not stable 
-2026-02-16,483,needs_recalibration,not perfect
-2026-02-19,483,valid,
-2026-02-26,483,invalid,Ambient transition
-2026-02-28,483,valid,
-2026-03-01,483,invalid,Signs of top box sensors. Follow up
-2026-03-08,483,valid,Some unstable
-2026-03-09,483,valid,
-2026-03-10,483,valid,weak_hives_in_medium_bin
-2026-03-11,483,valid,other:Some hives data are not stable.
-2026-03-12,483,valid,weak_hives_in_medium_bin
-2026-03-17,483,valid,avg_5day_bee_frames_diff_>_1
-2026-03-18,483,invalid,Removals
-2026-03-19,483,invalid,Removals
-2026-03-21,483,invalid,Data not stable
-2026-03-22,483,valid,"Grace end, must publish. Heavily relying on clipping, still not stable"
-2026-03-23,483,invalid,Data not stable
-2026-01-28,484,valid,
-2026-02-08,484,invalid,data not stable after intervention
-2026-02-09,484,needs_recalibration,
-2026-02-12,484,valid,
-2026-02-16,484,invalid,data not stable from inspections
-2026-02-17,484,valid,other
-2026-02-18,484,valid,other
-2026-02-19,484,valid,
-2026-02-22,484,valid,
-2026-02-23,484,valid,
-2026-02-26,484,invalid,Unstable data
-2026-02-28,484,valid,
-2026-03-01,484,valid,
-2026-03-02,484,valid,
-2026-03-14,484,invalid,Removals noise
-2026-03-15,484,valid,Close to grace end relying on clipping.
-2026-03-16,484,valid,other
-2026-03-17,484,valid,other
-2026-03-18,484,valid,temp jump
-2026-03-19,484,invalid,Uninstallation. DISABLE
-2026-02-10,491,valid,
-2026-02-12,491,valid,
-2026-02-15,491,invalid,unstable sensor data and ambient
-2026-02-17,491,valid,other
-2026-02-22,491,valid,
-2026-02-24,491,valid,
-2026-02-25,491,valid,
-2026-02-26,491,valid,
-2026-02-16,496,needs_recalibration,other
-2026-02-19,496,invalid,data unstable
-2026-02-25,496,valid,
-2026-03-02,496,valid,
-2026-03-09,496,valid,
-2026-03-10,496,valid,
-2026-03-11,496,valid,other
-2026-03-12,496,valid,other:Some malfunction gateways
-2026-01-29,518,invalid,
-2026-02-10,518,valid,
-2026-02-15,518,invalid,data not stable i suspect undocumented inspections
-2026-02-17,518,valid,other
-2026-02-25,518,valid,
-2026-03-01,518,valid,
-2026-03-22,518,invalid,Ambient not stable
-2026-02-18,549,invalid,unstable data
-2026-02-19,549,invalid,Unstable data
-2026-02-20,549,invalid,Data still not stable
-2026-03-01,549,valid,
-2026-03-15,549,invalid,Removals noise
-2026-03-18,549,invalid,Removals noise
-2026-03-19,549,valid,"Must publish because of grace end, but clipping is stable. Removals"
-2026-03-22,549,invalid,Data not stable
-2026-02-11,558,valid,
-2026-02-15,558,invalid,some weaks in mid bin are not stable
-2026-02-16,558,valid,other
-2026-02-17,558,valid,other
-2026-02-18,558,valid,other
-2026-02-19,558,valid,Not perfect
-2026-02-22,558,valid,
-2026-02-23,558,valid,"Small hive set, not perfectly stable. Good enough with clipping"
-2026-02-24,558,valid,
-2026-02-26,558,valid,
-2026-03-01,558,invalid,Unstable data
-2026-03-02,558,valid,
-2026-03-05,558,valid,
-2026-03-09,558,valid,
-2026-03-10,558,invalid,other:Unstable ambient
-2026-03-11,558,valid,avg_5day_bee_frames_diff_>_1
-2026-03-12,558,valid,avg_5day_bee_frames_diff_>_1
-2026-03-15,558,valid,other
-2026-03-16,558,invalid,Ambient not stable
-2026-03-17,558,invalid,Ambient noise
-2026-03-18,558,valid,other
-2026-03-19,558,valid,Small group. Not all stable
-2026-03-22,558,invalid,Transition to singles
-2026-02-11,625,invalid,
-2026-02-12,625,invalid,temp drops
-2026-02-14,625,needs_recalibration,
-2026-03-16,625,valid,"Near grace end, still removal noise but clipping stable"
-2026-03-17,625,invalid,Removals
-2026-03-18,625,invalid,Ambient and data not stable
-2026-03-19,625,valid,"Must publish because of grace end, but clipping is stable. Ambient Transition"
-2026-03-22,625,invalid,Data not stable
-2026-03-23,625,valid,Singles not valid
-2026-02-23,661,invalid,Ambient transition
-2026-02-24,661,valid,"Some hives recover, we push prediction up with clipping"
-2026-02-25,661,invalid,Ambient transition
-2026-02-26,661,invalid,Ambient transition
-2026-02-28,661,valid,
-2026-03-01,661,needs_recalibration,
-2026-03-03,661,invalid,ambient transition
-2026-03-05,661,valid,
-2026-03-08,661,valid,
-2026-03-09,661,needs_recalibration,
-2026-03-16,661,valid,other
-2026-03-17,661,valid,other
-2026-03-18,661,valid,other
-2026-03-19,661,valid,Transitioned to singles. need to recheck
-2026-03-23,661,invalid,Data not stable
-2026-02-07,687,needs_recalibration,
-2026-02-10,687,valid,
-2026-02-15,687,valid,other
-2026-02-19,687,valid,
-2026-02-23,687,valid,
-2026-02-24,687,valid,
-2026-02-25,687,valid,
-2026-02-26,687,invalid,Ambient transition
-2026-02-28,687,valid,
-2026-03-01,687,valid,
-2026-03-05,687,valid,
-2026-03-11,687,invalid,other:removals
-2026-03-12,687,invalid,other:Everything is not installed. disable
-2026-02-01,750,needs_recalibration,
-2026-02-04,750,needs_recalibration,
-2026-02-07,750,valid,
-2026-02-09,750,needs_recalibration,
-2026-02-15,750,valid,not perfect
-2026-02-16,750,valid,other
-2026-02-17,750,invalid,inconsitent bins
-2026-02-19,750,valid,
-2026-02-23,750,needs_recalibration,
-2026-02-26,750,invalid,Ambient transition
-2026-02-28,750,needs_recalibration,
-2026-03-03,750,invalid,Ambient transition
-2026-03-08,750,valid,
-2026-03-19,750,valid,"Must publish because of grace end, but clipping is stable. Removals"
-2026-03-22,750,invalid,Data not stable
-2026-03-23,750,invalid,Data not stable
-2026-02-12,766,valid,
-2026-02-16,766,valid,other
-2026-02-17,766,invalid,unclear ambient and unstable hive data
-2026-02-18,766,valid,other
-2026-02-19,766,invalid,Unstable ambient
-2026-02-20,766,valid,
-2026-02-22,766,needs_recalibration,
-2026-02-26,766,valid,
-2026-03-01,766,valid,
-2026-03-17,766,valid,avg_5day_bee_frames_diff_>_1
-2026-03-18,766,invalid,Removals
-2026-03-19,766,invalid,Removals
-2026-03-21,766,invalid,Data not stable
-2026-03-22,766,valid,"Grace end, must publish. Heavily relying on clipping, still not stable"
-2026-03-23,766,invalid,Data not stable
-2026-03-09,776,valid,Some hives removed
-2026-03-10,776,valid,"other:In removals, borderline valid"
-2026-03-11,776,valid,other
-2026-03-12,776,valid,avg_5day_bee_frames_diff_>_1
-2026-03-15,776,valid,avg_5day_bee_frames_diff_>_1
-2026-03-16,776,valid,other
-2026-03-17,776,invalid,Unstable ambient
-2026-03-18,776,valid,no data
-2026-03-19,776,valid,strong_hives_in_weak_bin
-2026-03-22,776,valid,other
-2026-01-29,790,valid,
-2026-01-31,790,invalid,avg_5day_bee_frames_diff_>_1
-2026-02-01,790,valid,
-2026-02-03,790,invalid,test
-2026-02-04,790,invalid,
-2026-02-05,790,invalid,data is not stable (temperature drops) - repost model for tomorrow
-2026-02-11,790,valid,
-2026-02-15,790,invalid,model collapse and dipping yards
-2026-02-16,790,invalid,mode collapse
-2026-02-17,790,invalid,unstable data cuasing model collapse in the model
-2026-02-18,790,needs_recalibration,"Not perfect, new model to compensate ambient degradation "
-2026-02-20,790,valid,
-2026-02-24,790,valid,
-2026-03-01,790,valid,
-2026-03-02,790,valid,
-2026-03-08,790,valid,
-2026-03-09,790,needs_recalibration,
-2026-03-14,790,valid,Some hives not stable
-2026-03-15,790,invalid,Data dipping
-2026-03-16,790,invalid,Still not stable
-2026-03-17,790,invalid,Unstable ambient
-2026-03-18,790,invalid,Data still not stable
-2026-03-19,790,valid,"Must publish because of grace end, but clipping is stable. Ambinet not stable"
-2026-03-21,790,invalid,Data not stable
-2026-03-22,790,invalid,"Ambient not stable, reaching high as 60"
-2026-03-23,790,invalid,Data not stable after removals
-2026-01-24,935,valid,
-2026-01-26,935,needs_recalibration,
-2026-01-29,935,needs_recalibration,
-2026-02-01,935,invalid,data is not stable
-2026-02-02,935,invalid,
-2026-02-05,935,invalid,significant ambient change create insta
-2026-02-07,935,invalid,messy temeperature drops
-2026-02-08,935,invalid,messy temperature drops
-2026-02-09,935,valid,
-2026-02-10,935,needs_recalibration,
-2026-02-15,935,needs_recalibration,other
-2026-02-26,935,valid,
-2026-03-01,935,valid,
-2026-03-11,935,valid,other
-2026-03-18,935,invalid,Removals
-2026-03-19,935,invalid,Removals
-2026-03-21,935,invalid,Data not stable
-2026-03-22,935,valid,"Grace end, must publish. Heavily relying on clipping, still not stable"
-2026-03-23,935,invalid,Data not stable
-2026-02-18,940,invalid,unstable data
-2026-02-19,940,invalid,Unstable data
-2026-02-20,940,invalid,Data not stable for some strong hives
-2026-03-01,940,valid,
-2026-03-19,940,valid,strong_hives_in_weak_bin
-2026-02-16,943,valid,other
-2026-02-18,943,invalid,unstable ambient
-2026-02-22,943,valid,
-2026-02-24,943,valid,
-2026-02-25,943,valid,
-2026-02-26,943,valid,
-2026-03-02,943,valid,
-2026-03-05,943,valid,
-2026-03-18,943,valid,Singles not valid
-2026-03-19,943,valid,strong_hives_in_weak_bin
-2026-01-25,962,invalid,
-2026-01-24,968,valid,
-2026-01-27,968,invalid,"interventions, not stable"
-2026-01-28,968,invalid,
-2026-01-29,968,valid,
-2026-02-01,968,valid,
-2026-02-07,968,invalid,ambient not stable
-2026-02-15,968,needs_recalibration,other
-2026-02-22,968,valid,
-2026-03-01,968,valid,
-2026-03-09,968,valid,
-2026-03-10,968,valid,weak_hives_in_strong_bin
-2026-03-11,968,valid,other
-2026-03-12,968,valid,weak_hives_in_medium_bin
-2026-03-15,968,invalid,Removals noise
-2026-02-22,969,needs_recalibration,
-2026-02-26,969,valid,
-2026-03-01,969,valid,
-2026-03-08,969,invalid,"Data unstable, maybe start of removal?"
-2026-03-09,969,valid,Not all stable
-2026-03-10,969,invalid,other:Data not stable
-2026-03-11,969,valid,other
-2026-03-12,969,valid,other:Mix setup. Singles are not accurate
-2026-02-11,970,needs_recalibration,
-2026-02-14,970,needs_recalibration,
-2026-02-23,970,invalid,Ambient transition
-2026-02-25,970,valid,
-2026-03-08,970,invalid,Ambient transtiion + removal
-2026-03-10,970,valid,other
-2026-03-16,970,valid,avg_5day_bee_frames_diff_>_1
-2026-03-17,970,valid,strong_hives_in_weak_bin
-2026-03-23,970,invalid,Data not stable
-2026-02-08,984,valid,
-2026-02-09,984,needs_recalibration,
-2026-02-14,984,needs_recalibration,
-2026-02-18,984,valid,Inconsistent hive configuration. Some good some worst.
-2026-02-19,984,valid,
-2026-02-23,984,invalid,Ambient transition
-2026-02-25,984,needs_recalibration,Low confidence deployment to balance between different configuraiotn
-2026-03-22,984,valid,temp jumps
-2026-02-15,1144,needs_recalibration,other
-2026-02-22,1144,valid,
-2026-03-01,1144,valid,
-2026-03-15,1144,invalid,Disable model since seems like not installed anymore
-2026-02-07,1155,invalid,data vuts and temeprature drops
-2026-02-08,1155,valid,
-2026-02-09,1155,invalid,
-2026-02-15,1155,needs_recalibration,new model
-2026-02-25,1155,valid,
-2026-02-26,1155,invalid,Unstable ambient
-2026-03-03,1155,valid,
-2026-03-05,1155,valid,
-2026-03-08,1155,invalid,Ambient transition
-2026-03-09,1155,valid,
-2026-03-10,1155,valid,other
-2026-03-11,1155,valid,other
-2026-03-12,1155,valid,other
-2026-03-15,1155,invalid,Data dipping
-2026-03-17,1155,valid,strong_hives_in_weak_bin
-2026-03-18,1155,valid,unbalanced_configuration
-2026-03-19,1155,valid,weak_hives_in_medium_bin
-2026-03-21,1155,invalid,Data not stable
-2026-03-23,1155,invalid,Data not stable
-2026-02-16,1618,valid,other
-2026-02-17,1618,valid,other
-2026-02-18,1618,invalid,data not stable
-2026-02-19,1618,valid,
-2026-02-22,1618,invalid,Data not stable
-2026-03-01,1618,valid,
-2026-03-02,1618,valid,
-2026-03-03,1618,valid,
-2026-03-04,1618,valid,
-2026-03-05,1618,valid,
-2026-03-09,1618,valid,
-2026-03-11,1618,valid,avg_5day_bee_frames_diff_>_1
-2026-03-12,1618,valid,other
-2026-03-14,1618,invalid,Data not stable
-2026-03-15,1618,invalid,Removals noise.
-2026-03-16,1618,valid,"Near grace end, still removal noise but clipping stable"
-2026-03-17,1618,valid,"temp drop
+08/02/2026,36,invalid,messy ambient
+09/02/2026,36,valid,
+10/02/2026,36,needs_recalibration,
+16/02/2026,36,valid,other
+17/02/2026,36,valid,other
+18/02/2026,36,valid,not perfect
+19/02/2026,36,valid,
+22/02/2026,36,needs_recalibration,
+26/02/2026,36,invalid,Ambient transition
+03/03/2026,36,valid,
+08/03/2026,36,valid,
+09/03/2026,36,valid,
+25/01/2026,47,valid,
+26/01/2026,47,valid,
+09/02/2026,47,needs_recalibration,
+12/02/2026,47,valid,
+17/02/2026,47,needs_recalibration,other
+20/02/2026,47,valid,
+24/02/2026,47,valid,
+26/02/2026,47,needs_recalibration,
+22/02/2026,48,valid,
+01/03/2026,48,valid,
+16/03/2026,48,needs_recalibration,other
+16/02/2026,163,valid,other
+24/02/2026,163,valid,
+25/02/2026,163,valid,
+26/02/2026,163,invalid,Ambient transition
+01/03/2026,163,valid,
+02/03/2026,163,valid,
+03/03/2026,163,valid,
+08/03/2026,163,valid,
+11/03/2026,163,valid,unbalanced_configuration
+24/01/2026,395,needs_recalibration,
+08/02/2026,395,needs_recalibration,
+11/02/2026,395,needs_recalibration,
+26/02/2026,395,invalid,Ambient transition
+28/02/2026,395,needs_recalibration,Still hot gateways
+03/03/2026,395,invalid,Ambient transition
+09/03/2026,395,valid,
+10/03/2026,395,valid,weak_hives_in_medium_bin
+11/03/2026,395,valid,other
+12/03/2026,395,valid,other:Some ambient transition
+22/03/2026,395,valid,unbalanced_configuration
+10/02/2026,483,needs_recalibration,
+15/02/2026,483,invalid,data not stable 
+16/02/2026,483,needs_recalibration,not perfect
+19/02/2026,483,valid,
+26/02/2026,483,invalid,Ambient transition
+28/02/2026,483,valid,
+01/03/2026,483,invalid,Signs of top box sensors. Follow up
+08/03/2026,483,valid,Some unstable
+09/03/2026,483,valid,
+10/03/2026,483,valid,weak_hives_in_medium_bin
+11/03/2026,483,valid,other:Some hives data are not stable.
+12/03/2026,483,valid,weak_hives_in_medium_bin
+17/03/2026,483,valid,avg_5day_bee_frames_diff_>_1
+18/03/2026,483,invalid,Removals
+19/03/2026,483,invalid,Removals
+21/03/2026,483,invalid,Data not stable
+22/03/2026,483,valid,"Grace end, must publish. Heavily relying on clipping, still not stable"
+23/03/2026,483,invalid,Data not stable
+28/01/2026,484,valid,
+08/02/2026,484,invalid,data not stable after intervention
+09/02/2026,484,needs_recalibration,
+12/02/2026,484,valid,
+16/02/2026,484,invalid,data not stable from inspections
+17/02/2026,484,valid,other
+18/02/2026,484,valid,other
+19/02/2026,484,valid,
+22/02/2026,484,valid,
+23/02/2026,484,valid,
+26/02/2026,484,invalid,Unstable data
+28/02/2026,484,valid,
+01/03/2026,484,valid,
+02/03/2026,484,valid,
+14/03/2026,484,invalid,Removals noise
+15/03/2026,484,valid,Close to grace end relying on clipping.
+16/03/2026,484,valid,other
+17/03/2026,484,valid,other
+18/03/2026,484,valid,temp jump
+19/03/2026,484,invalid,Uninstallation. DISABLE
+10/02/2026,491,valid,
+12/02/2026,491,valid,
+15/02/2026,491,invalid,unstable sensor data and ambient
+17/02/2026,491,valid,other
+22/02/2026,491,valid,
+24/02/2026,491,valid,
+25/02/2026,491,valid,
+26/02/2026,491,valid,
+16/02/2026,496,needs_recalibration,other
+19/02/2026,496,invalid,data unstable
+25/02/2026,496,valid,
+02/03/2026,496,valid,
+09/03/2026,496,valid,
+10/03/2026,496,valid,
+11/03/2026,496,valid,other
+12/03/2026,496,valid,other:Some malfunction gateways
+29/01/2026,518,invalid,
+10/02/2026,518,valid,
+15/02/2026,518,invalid,data not stable i suspect undocumented inspections
+17/02/2026,518,valid,other
+25/02/2026,518,valid,
+01/03/2026,518,valid,
+22/03/2026,518,invalid,Ambient not stable
+18/02/2026,549,invalid,unstable data
+19/02/2026,549,invalid,Unstable data
+20/02/2026,549,invalid,Data still not stable
+01/03/2026,549,valid,
+15/03/2026,549,invalid,Removals noise
+18/03/2026,549,invalid,Removals noise
+19/03/2026,549,valid,"Must publish because of grace end, but clipping is stable. Removals"
+22/03/2026,549,invalid,Data not stable
+11/02/2026,558,valid,
+15/02/2026,558,invalid,some weaks in mid bin are not stable
+16/02/2026,558,valid,other
+17/02/2026,558,valid,other
+18/02/2026,558,valid,other
+19/02/2026,558,valid,Not perfect
+22/02/2026,558,valid,
+23/02/2026,558,valid,"Small hive set, not perfectly stable. Good enough with clipping"
+24/02/2026,558,valid,
+26/02/2026,558,valid,
+01/03/2026,558,invalid,Unstable data
+02/03/2026,558,valid,
+05/03/2026,558,valid,
+09/03/2026,558,valid,
+10/03/2026,558,invalid,other:Unstable ambient
+11/03/2026,558,valid,avg_5day_bee_frames_diff_>_1
+12/03/2026,558,valid,avg_5day_bee_frames_diff_>_1
+15/03/2026,558,valid,other
+16/03/2026,558,invalid,Ambient not stable
+17/03/2026,558,invalid,Ambient noise
+18/03/2026,558,valid,other
+19/03/2026,558,valid,Small group. Not all stable
+22/03/2026,558,invalid,Transition to singles
+11/02/2026,625,invalid,
+12/02/2026,625,invalid,temp drops
+14/02/2026,625,needs_recalibration,
+16/03/2026,625,valid,"Near grace end, still removal noise but clipping stable"
+17/03/2026,625,invalid,Removals
+18/03/2026,625,invalid,Ambient and data not stable
+19/03/2026,625,valid,"Must publish because of grace end, but clipping is stable. Ambient Transition"
+22/03/2026,625,invalid,Data not stable
+23/03/2026,625,valid,Singles not valid
+23/02/2026,661,invalid,Ambient transition
+24/02/2026,661,valid,"Some hives recover, we push prediction up with clipping"
+25/02/2026,661,invalid,Ambient transition
+26/02/2026,661,invalid,Ambient transition
+28/02/2026,661,valid,
+01/03/2026,661,needs_recalibration,
+03/03/2026,661,invalid,ambient transition
+05/03/2026,661,valid,
+08/03/2026,661,valid,
+09/03/2026,661,needs_recalibration,
+16/03/2026,661,valid,other
+17/03/2026,661,valid,other
+18/03/2026,661,valid,other
+19/03/2026,661,valid,Transitioned to singles. need to recheck
+23/03/2026,661,invalid,Data not stable
+07/02/2026,687,needs_recalibration,
+10/02/2026,687,valid,
+15/02/2026,687,valid,other
+19/02/2026,687,valid,
+23/02/2026,687,valid,
+24/02/2026,687,valid,
+25/02/2026,687,valid,
+26/02/2026,687,invalid,Ambient transition
+28/02/2026,687,valid,
+01/03/2026,687,valid,
+05/03/2026,687,valid,
+11/03/2026,687,invalid,other:removals
+12/03/2026,687,invalid,other:Everything is not installed. disable
+01/02/2026,750,needs_recalibration,
+04/02/2026,750,needs_recalibration,
+07/02/2026,750,valid,
+09/02/2026,750,needs_recalibration,
+15/02/2026,750,valid,not perfect
+16/02/2026,750,valid,other
+17/02/2026,750,invalid,inconsitent bins
+19/02/2026,750,valid,
+23/02/2026,750,needs_recalibration,
+26/02/2026,750,invalid,Ambient transition
+28/02/2026,750,needs_recalibration,
+03/03/2026,750,invalid,Ambient transition
+08/03/2026,750,valid,
+19/03/2026,750,valid,"Must publish because of grace end, but clipping is stable. Removals"
+22/03/2026,750,invalid,Data not stable
+23/03/2026,750,invalid,Data not stable
+12/02/2026,766,valid,
+16/02/2026,766,valid,other
+17/02/2026,766,invalid,unclear ambient and unstable hive data
+18/02/2026,766,valid,other
+19/02/2026,766,invalid,Unstable ambient
+20/02/2026,766,valid,
+22/02/2026,766,needs_recalibration,
+26/02/2026,766,valid,
+01/03/2026,766,valid,
+17/03/2026,766,valid,avg_5day_bee_frames_diff_>_1
+18/03/2026,766,invalid,Removals
+19/03/2026,766,invalid,Removals
+21/03/2026,766,invalid,Data not stable
+22/03/2026,766,valid,"Grace end, must publish. Heavily relying on clipping, still not stable"
+23/03/2026,766,invalid,Data not stable
+09/03/2026,776,valid,Some hives removed
+10/03/2026,776,valid,"other:In removals, borderline valid"
+11/03/2026,776,valid,other
+12/03/2026,776,valid,avg_5day_bee_frames_diff_>_1
+15/03/2026,776,valid,avg_5day_bee_frames_diff_>_1
+16/03/2026,776,valid,other
+17/03/2026,776,invalid,Unstable ambient
+18/03/2026,776,valid,no data
+19/03/2026,776,valid,strong_hives_in_weak_bin
+22/03/2026,776,valid,other
+29/01/2026,790,valid,
+31/01/2026,790,invalid,avg_5day_bee_frames_diff_>_1
+01/02/2026,790,valid,
+03/02/2026,790,invalid,test
+04/02/2026,790,invalid,
+05/02/2026,790,invalid,data is not stable (temperature drops) - repost model for tomorrow
+11/02/2026,790,valid,
+15/02/2026,790,invalid,model collapse and dipping yards
+16/02/2026,790,invalid,mode collapse
+17/02/2026,790,invalid,unstable data cuasing model collapse in the model
+18/02/2026,790,needs_recalibration,"Not perfect, new model to compensate ambient degradation "
+20/02/2026,790,valid,
+24/02/2026,790,valid,
+01/03/2026,790,valid,
+02/03/2026,790,valid,
+08/03/2026,790,valid,
+09/03/2026,790,needs_recalibration,
+14/03/2026,790,valid,Some hives not stable
+15/03/2026,790,invalid,Data dipping
+16/03/2026,790,invalid,Still not stable
+17/03/2026,790,invalid,Unstable ambient
+18/03/2026,790,invalid,Data still not stable
+19/03/2026,790,valid,"Must publish because of grace end, but clipping is stable. Ambinet not stable"
+21/03/2026,790,invalid,Data not stable
+22/03/2026,790,invalid,"Ambient not stable, reaching high as 60"
+23/03/2026,790,invalid,Data not stable after removals
+24/01/2026,935,valid,
+26/01/2026,935,needs_recalibration,
+29/01/2026,935,needs_recalibration,
+01/02/2026,935,invalid,data is not stable
+02/02/2026,935,invalid,
+05/02/2026,935,invalid,significant ambient change create insta
+07/02/2026,935,invalid,messy temeperature drops
+08/02/2026,935,invalid,messy temperature drops
+09/02/2026,935,valid,
+10/02/2026,935,needs_recalibration,
+15/02/2026,935,needs_recalibration,other
+26/02/2026,935,valid,
+01/03/2026,935,valid,
+11/03/2026,935,valid,other
+18/03/2026,935,invalid,Removals
+19/03/2026,935,invalid,Removals
+21/03/2026,935,invalid,Data not stable
+22/03/2026,935,valid,"Grace end, must publish. Heavily relying on clipping, still not stable"
+23/03/2026,935,invalid,Data not stable
+18/02/2026,940,invalid,unstable data
+19/02/2026,940,invalid,Unstable data
+20/02/2026,940,invalid,Data not stable for some strong hives
+01/03/2026,940,valid,
+19/03/2026,940,valid,strong_hives_in_weak_bin
+16/02/2026,943,valid,other
+18/02/2026,943,invalid,unstable ambient
+22/02/2026,943,valid,
+24/02/2026,943,valid,
+25/02/2026,943,valid,
+26/02/2026,943,valid,
+02/03/2026,943,valid,
+05/03/2026,943,valid,
+18/03/2026,943,valid,Singles not valid
+19/03/2026,943,valid,strong_hives_in_weak_bin
+25/01/2026,962,invalid,
+24/01/2026,968,valid,
+27/01/2026,968,invalid,"interventions, not stable"
+28/01/2026,968,invalid,
+29/01/2026,968,valid,
+01/02/2026,968,valid,
+07/02/2026,968,invalid,ambient not stable
+15/02/2026,968,needs_recalibration,other
+22/02/2026,968,valid,
+01/03/2026,968,valid,
+09/03/2026,968,valid,
+10/03/2026,968,valid,weak_hives_in_strong_bin
+11/03/2026,968,valid,other
+12/03/2026,968,valid,weak_hives_in_medium_bin
+15/03/2026,968,invalid,Removals noise
+22/02/2026,969,needs_recalibration,
+26/02/2026,969,valid,
+01/03/2026,969,valid,
+08/03/2026,969,invalid,"Data unstable, maybe start of removal?"
+09/03/2026,969,valid,Not all stable
+10/03/2026,969,invalid,other:Data not stable
+11/03/2026,969,valid,other
+12/03/2026,969,valid,other:Mix setup. Singles are not accurate
+11/02/2026,970,needs_recalibration,
+14/02/2026,970,needs_recalibration,
+23/02/2026,970,invalid,Ambient transition
+25/02/2026,970,valid,
+08/03/2026,970,invalid,Ambient transtiion + removal
+10/03/2026,970,valid,other
+16/03/2026,970,valid,avg_5day_bee_frames_diff_>_1
+17/03/2026,970,valid,strong_hives_in_weak_bin
+23/03/2026,970,invalid,Data not stable
+08/02/2026,984,valid,
+09/02/2026,984,needs_recalibration,
+14/02/2026,984,needs_recalibration,
+18/02/2026,984,valid,Inconsistent hive configuration. Some good some worst.
+19/02/2026,984,valid,
+23/02/2026,984,invalid,Ambient transition
+25/02/2026,984,needs_recalibration,Low confidence deployment to balance between different configuraiotn
+22/03/2026,984,valid,temp jumps
+15/02/2026,1144,needs_recalibration,other
+22/02/2026,1144,valid,
+01/03/2026,1144,valid,
+15/03/2026,1144,invalid,Disable model since seems like not installed anymore
+07/02/2026,1155,invalid,data vuts and temeprature drops
+08/02/2026,1155,valid,
+09/02/2026,1155,invalid,
+15/02/2026,1155,needs_recalibration,new model
+25/02/2026,1155,valid,
+26/02/2026,1155,invalid,Unstable ambient
+03/03/2026,1155,valid,
+05/03/2026,1155,valid,
+08/03/2026,1155,invalid,Ambient transition
+09/03/2026,1155,valid,
+10/03/2026,1155,valid,other
+11/03/2026,1155,valid,other
+12/03/2026,1155,valid,other
+15/03/2026,1155,invalid,Data dipping
+17/03/2026,1155,valid,strong_hives_in_weak_bin
+18/03/2026,1155,valid,unbalanced_configuration
+19/03/2026,1155,valid,weak_hives_in_medium_bin
+21/03/2026,1155,invalid,Data not stable
+23/03/2026,1155,invalid,Data not stable
+16/02/2026,1618,valid,other
+17/02/2026,1618,valid,other
+18/02/2026,1618,invalid,data not stable
+19/02/2026,1618,valid,
+22/02/2026,1618,invalid,Data not stable
+01/03/2026,1618,valid,
+02/03/2026,1618,valid,
+03/03/2026,1618,valid,
+04/03/2026,1618,valid,
+05/03/2026,1618,valid,
+09/03/2026,1618,valid,
+11/03/2026,1618,valid,avg_5day_bee_frames_diff_>_1
+12/03/2026,1618,valid,other
+14/03/2026,1618,invalid,Data not stable
+15/03/2026,1618,invalid,Removals noise.
+16/03/2026,1618,valid,"Near grace end, still removal noise but clipping stable"
+17/03/2026,1618,valid,"temp drop
 "
-2026-03-18,1618,invalid,Removals
-2026-03-19,1618,invalid,Uninstalled. DISABLE
-2026-02-11,1691,valid,
-2026-02-12,1691,valid,
-2026-02-15,1691,valid,some outliers
-2026-02-18,1691,invalid,unstable data
-2026-02-19,1691,invalid,Data not stable
-2026-02-20,1691,valid,
-2026-03-01,1691,valid,
-2026-03-02,1691,valid,
-2026-03-09,1691,valid,
-2026-03-10,1691,valid,other
-2026-03-11,1691,valid,other
-2026-03-12,1691,valid,other
-2026-03-16,1691,valid,weak_hives_in_medium_bin
-2026-03-17,1691,invalid,"Data unstable, looks like splits"
-2026-03-18,1691,valid,Some noise from removals. Singles not valid.
-2026-03-21,1691,invalid,Data not stable
-2026-03-22,1691,invalid,Data not stable
-2026-03-23,1691,valid,"Grance end, must publish. Clipping relatively stable"
-2026-01-27,1693,invalid,last day intervention break model predictions
-2026-01-28,1693,invalid,
-2026-01-29,1693,invalid,on the move (disabling model)
-2026-02-18,1693,valid,other
-2026-02-22,1693,valid,
-2026-02-23,1693,valid,
-2026-03-01,1693,valid,
-2026-03-09,1693,invalid,Data not stable
-2026-03-10,1693,valid,other:Raw not stable but clipping is. Prefer to publish to not lose data
-2026-03-11,1693,invalid,other:Seems like a removal
-2026-03-12,1693,invalid,other:removals
-2026-03-19,1693,invalid,Rrmovals and uninstllation
-2026-03-21,1693,invalid,Uninstallation. DISABLE
-2026-01-26,1713,needs_recalibration,
-2026-01-29,1713,valid,
-2026-02-08,1713,valid,
-2026-02-15,1713,invalid,data is not valid post inspections
-2026-02-23,1713,valid,
-2026-02-25,1713,valid,
-2026-02-26,1713,invalid,Ambient transition
-2026-02-28,1713,valid,
-2026-03-02,1713,valid,
-2026-03-09,1713,valid,
-2026-03-10,1713,invalid,other:Ambient transition
-2026-03-11,1713,valid,strong_hives_in_weak_bin
-2026-03-12,1713,valid,other
-2026-03-19,1713,valid,Singles invalid
-2026-02-01,1723,valid,
-2026-02-02,1723,valid,
-2026-02-15,1723,valid,other
-2026-02-16,1723,valid,other
-2026-02-17,1723,valid,other
-2026-02-18,1723,invalid,unstable ambient and hive data
-2026-02-19,1723,valid,Release under clipping
-2026-02-22,1723,valid,
-2026-02-26,1723,valid,
-2026-03-05,1723,valid,
-2026-03-08,1723,valid,
-2026-03-19,1723,valid,other
-2026-01-28,1730,invalid,Interventions
-2026-02-08,1730,needs_recalibration,
-2026-02-14,1730,needs_recalibration,
-2026-02-18,1730,needs_recalibration,"Not perfect, release under clipping with ambient compensation "
-2026-02-26,1730,invalid,Ambient transition
-2026-02-28,1730,needs_recalibration,
-2026-03-03,1730,valid,
-2026-03-09,1730,invalid,Ambient transition
-2026-03-10,1730,valid,other
-2026-03-11,1730,valid,temp drop
-2026-03-12,1730,invalid,other:Probably started removals
-2026-03-23,1730,valid,avg_5day_bee_frames_diff_>_1
-2026-02-14,1764,needs_recalibration,
-2026-02-17,1764,invalid,unstable data
-2026-02-18,1764,needs_recalibration,Data still not stable but release under clipping
-2026-02-28,1764,needs_recalibration,
-2026-03-03,1764,valid,
-2026-03-08,1764,valid,
-2026-03-09,1764,valid,
-2026-03-10,1764,valid,other
-2026-03-11,1764,valid,temp drop
-2026-03-12,1764,invalid,other:Started removals?
-2026-03-14,1764,valid,Some hives not stable
-2026-03-15,1764,invalid,Data not stable
-2026-03-16,1764,invalid,Removal noise
-2026-03-17,1764,invalid,Removals and uninstllation
-2026-03-18,1764,invalid,Removals
-2026-03-19,1764,valid,"Must publish because of grace end, but clipping is stable. Removals"
-2026-03-21,1764,invalid,Some hives are dipping
-2026-03-22,1764,invalid,Ambient transition
-2026-01-26,1768,needs_recalibration,
-2026-01-29,1768,invalid,on the move (disabling model)
-2026-02-10,1768,needs_recalibration,
-2026-02-14,1768,needs_recalibration,
-2026-02-17,1768,valid,other
-2026-02-18,1768,valid,other
-2026-02-19,1768,valid,
-2026-02-22,1768,valid,
-2026-03-01,1768,valid,
-2026-03-09,1768,valid,
-2026-03-10,1768,valid,other
-2026-03-11,1768,valid,other
-2026-03-12,1768,valid,unbalanced_configuration
-2026-03-15,1768,valid,
-2026-03-19,1768,invalid,Removals
-2026-03-22,1768,invalid,Data not stable
-2026-03-23,1768,valid,"Grance end, must publish. Taking a hit on clipping"
-2026-02-04,1793,needs_recalibration,
-2026-02-07,1793,valid,
-2026-02-08,1793,invalid,data stabilization
-2026-02-10,1793,needs_recalibration,
-2026-03-04,1793,valid,Some gateways not stable
-2026-03-05,1793,valid,
-2026-03-08,1793,invalid,removal
-2026-03-10,1793,valid,other:After removal
-2026-03-11,1793,invalid,other:Removals left over.
-2026-03-12,1793,valid,other:Removal leftovers.
-2026-03-14,1793,invalid,"Post removal, seems like switch not singles and not stable"
-2026-03-15,1793,invalid,"Switching to singles after removals, only a few sensors left."
-2026-03-16,1793,valid,Not valid for singles.
-2026-03-19,1793,invalid,"Mixed configuration with low sensor count, not supported"
-2026-02-26,1794,valid,Clipping guard
-2026-03-01,1794,valid,Not all hives are stable
-2026-03-10,1794,invalid,other:Some data not stable
-2026-03-11,1794,invalid,other:Data decreasing and not stable
-2026-03-12,1794,valid,unbalanced_configuration
-2026-03-15,1794,invalid,Data dipping
-2026-03-19,1794,invalid,Removals
-2026-03-21,1794,invalid,Data not stable
-2026-03-22,1794,invalid,Data not stable
-2026-03-23,1794,valid,"Grance end, must publish. Clipping relatively stable"
-2026-01-28,1838,invalid,Interventions
-2026-01-29,1838,invalid,interventions
-2026-02-15,1838,needs_recalibration,other
-2026-02-18,1838,valid,other
-2026-02-23,1838,valid,
-2026-02-26,1838,valid,
-2026-03-01,1838,valid,
-2026-03-04,1838,valid,
-2026-03-11,1838,valid,other
-2026-03-14,1838,invalid,Data not stable
-2026-03-15,1838,needs_recalibration,other
-2026-03-18,1838,valid,Singles invalid
-2026-02-20,1884,invalid,Still stabilize after fixing installation
-2026-02-22,1884,valid,
-2026-02-25,1884,valid,
-2026-02-26,1884,valid,
-2026-03-09,1884,needs_recalibration,Some unstable hives
-2026-03-16,1884,needs_recalibration,Recalibrated model but data still dipping. Near grace end
-2026-03-19,1884,valid,"Must publish because of grace end, but clipping is stable. Transition to singles"
-2026-03-22,1884,invalid,Data not stable
-2026-03-23,1884,invalid,Data not stable
-2026-02-04,2703,invalid,
-2026-02-14,2703,needs_recalibration,
-2026-02-19,2703,needs_recalibration,Relying on clipping. Data not stable
-2026-02-22,2703,needs_recalibration,
-2026-02-26,2703,needs_recalibration,
-2026-03-02,2703,valid,Some hives are unstable
-2026-03-05,2703,invalid,Some hives not stable better to wait
-2026-03-10,2703,valid,other
-2026-03-11,2703,valid,other
-2026-03-12,2703,invalid,other:Data not stable
-2026-03-14,2703,valid,
-2026-03-15,2703,valid,other
-2026-03-19,2703,valid,Transition to singles. Need to recheck
-2026-03-22,2703,invalid,Ambient transition
-2026-01-20,2777,needs_recalibration,
-2026-01-26,2777,needs_recalibration,
-2026-01-29,2777,invalid,interventions
-2026-01-31,2777,invalid,"not stable, in deployment"
-2026-02-22,2777,valid,
-2026-03-12,2777,valid,
-2026-03-15,2777,valid,other
-2026-03-18,2777,valid,other
-2026-03-19,2777,valid,removals
-2026-03-21,2777,invalid,Data and ambient not stable
-2026-03-22,2777,invalid,Data not stable
-2026-02-01,2799,valid,
-2026-02-02,2799,invalid,
-2026-02-08,2799,invalid,stabilize after intervention
-2026-02-09,2799,needs_recalibration,
-2026-02-12,2799,valid,
-2026-02-22,2799,valid,
-2026-02-23,2799,valid,
-2026-03-01,2799,valid,
-2026-03-09,2799,invalid,Ambient transition
-2026-03-10,2799,valid,avg_5day_bee_frames_diff_>_1
-2026-03-11,2799,valid,other
-2026-03-12,2799,valid,other
-2026-03-15,2799,invalid,Uninstallation events.
-2026-03-16,2799,valid,Not valid for singles
-2026-03-23,2799,valid,avg_5day_bee_frames_diff_>_1
-2026-02-08,2805,valid,
-2026-02-09,2805,needs_recalibration,
-2026-02-12,2805,invalid,data not stable
-2026-02-14,2805,needs_recalibration,
-2026-02-17,2805,valid,other
-2026-03-08,2805,valid,
-2026-03-09,2805,invalid,Some hives data not stable
-2026-03-10,2805,valid,other:Not all stable
-2026-03-11,2805,valid,strong_hives_in_weak_bin
-2026-03-12,2805,valid,unbalanced_configuration
-2026-03-15,2805,valid,other
-2026-03-19,2805,invalid,Removals
-2026-03-21,2805,valid,Must publish because of 5 days grace end. Ambient transition makes data still not stable
-2026-03-22,2805,invalid,Ambient transition
-2026-03-23,2805,valid,Relying on clipping
-2026-01-27,2834,valid,
-2026-01-28,2834,valid,
-2026-01-29,2834,needs_recalibration,
-2026-02-08,2834,needs_recalibration,
-2026-02-11,2834,needs_recalibration,
-2026-02-14,2834,needs_recalibration,
-2026-02-17,2834,needs_recalibration,other
-2026-02-22,2834,needs_recalibration,
-2026-02-25,2834,valid,
-2026-02-26,2834,invalid,Unstable ambient and hive data
-2026-02-28,2834,needs_recalibration,"Relying on clipping, still hot gateways"
-2026-03-03,2834,invalid,Unstable data
-2026-03-08,2834,valid,
-2026-03-12,2834,valid,unbalanced_configuration
-2026-03-15,2834,invalid,Data still not stable
-2026-03-16,2834,valid,"Near grace end, still removal noise but clipping stable"
-2026-03-17,2834,invalid,removals
-2026-03-18,2834,invalid,Removals
-2026-03-19,2834,valid,"Must publish because of grace end, but clipping is stable. Removals noise"
-2026-02-18,2854,invalid,unstable data
-2026-02-19,2854,invalid,Unstable data
-2026-02-22,2854,valid,
-2026-02-23,2854,valid,
-2026-02-24,2854,valid,
-2026-03-01,2854,valid,
-2026-03-08,2854,valid,
-2026-03-15,2854,invalid,Removals noise
-2026-03-18,2854,invalid,Removals noise
-2026-03-19,2854,valid,"Must publish because of grace end, but clipping is stable. Removals"
-2026-03-22,2854,invalid,Data not stable
-2026-01-31,2858,needs_recalibration,
-2026-02-01,2858,invalid,avg_5day_bee_frames_diff_>_1
-2026-02-04,2858,invalid,
-2026-02-05,2858,invalid,data unstable
-2026-02-07,2858,needs_recalibration,
-2026-02-10,2858,invalid,temperature drops
-2026-02-11,2858,valid,
-2026-02-14,2858,invalid,data not stable
-2026-02-15,2858,invalid,some data is unstable
-2026-02-17,2858,needs_recalibration,mode collapse but must release because of 5 days grace
-2026-02-25,2858,valid,
-2026-02-26,2858,valid,
-2026-03-01,2858,valid,
-2026-03-02,2858,valid,
-2026-03-04,2858,valid,
-2026-03-10,2858,valid,other
-2026-03-11,2858,valid,strong_hives_in_weak_bin
-2026-03-12,2858,invalid,other:Ambient over heating
-2026-03-14,2858,invalid,Looks like removal noise
-2026-03-17,2858,invalid,Still removal noise
-2026-03-18,2858,invalid,Ambient not stable
-2026-03-19,2858,valid,"Must publish because of grace end, but clipping is stable. Ambient split"
-2026-03-21,2858,invalid,Data and ambient not stable
-2026-03-22,2858,invalid,Data no stable
-2026-03-23,2858,invalid,Data not stable and ambient transition
-2026-02-14,2889,needs_recalibration,
-2026-02-18,2889,invalid,Data not stable with temperature drops
-2026-02-19,2889,valid,Repost
-2026-02-22,2889,valid,
-2026-02-23,2889,valid,
-2026-02-24,2889,valid,
-2026-02-25,2889,valid,
-2026-03-05,2889,valid,Some outliers
-2026-03-08,2889,needs_recalibration,
-2026-03-15,2889,invalid,Removals noise
-2026-03-16,2889,valid,"Near grace end, still removal noise but clipping stable"
-2026-03-17,2889,invalid,Removals.
-2026-03-18,2889,valid,Some data noise but clipping stable
-2026-03-23,2889,invalid,Ambient and data not stable
-2026-03-01,2901,valid,
-2026-03-15,2901,valid,other
-2026-03-17,2901,invalid,Removals
-2026-03-18,2901,invalid,Removals
-2026-03-19,2901,valid,"Must publish because of grace end, but clipping is stable. Ambient transition and data noise"
-2026-03-22,2901,invalid,Ambient not stable
-2026-03-23,2901,valid,Good enough after removals
-2026-03-10,2929,valid,other
-2026-03-11,2929,valid,unbalanced_configuration
-2026-03-12,2929,valid,other
-2026-03-15,2929,valid,other
-2026-03-16,2929,valid,other
-2026-03-18,2929,valid,other
-2026-03-19,2929,valid,other
-2026-03-22,2929,valid,other
+18/03/2026,1618,invalid,Removals
+19/03/2026,1618,invalid,Uninstalled. DISABLE
+11/02/2026,1691,valid,
+12/02/2026,1691,valid,
+15/02/2026,1691,valid,some outliers
+18/02/2026,1691,invalid,unstable data
+19/02/2026,1691,invalid,Data not stable
+20/02/2026,1691,valid,
+01/03/2026,1691,valid,
+02/03/2026,1691,valid,
+09/03/2026,1691,valid,
+10/03/2026,1691,valid,other
+11/03/2026,1691,valid,other
+12/03/2026,1691,valid,other
+16/03/2026,1691,valid,weak_hives_in_medium_bin
+17/03/2026,1691,invalid,"Data unstable, looks like splits"
+18/03/2026,1691,valid,Some noise from removals. Singles not valid.
+21/03/2026,1691,invalid,Data not stable
+22/03/2026,1691,invalid,Data not stable
+23/03/2026,1691,valid,"Grance end, must publish. Clipping relatively stable"
+27/01/2026,1693,invalid,last day intervention break model predictions
+28/01/2026,1693,invalid,
+29/01/2026,1693,invalid,on the move (disabling model)
+18/02/2026,1693,valid,other
+22/02/2026,1693,valid,
+23/02/2026,1693,valid,
+01/03/2026,1693,valid,
+09/03/2026,1693,invalid,Data not stable
+10/03/2026,1693,valid,other:Raw not stable but clipping is. Prefer to publish to not lose data
+11/03/2026,1693,invalid,other:Seems like a removal
+12/03/2026,1693,invalid,other:removals
+19/03/2026,1693,invalid,Rrmovals and uninstllation
+21/03/2026,1693,invalid,Uninstallation. DISABLE
+26/01/2026,1713,needs_recalibration,
+29/01/2026,1713,valid,
+08/02/2026,1713,valid,
+15/02/2026,1713,invalid,data is not valid post inspections
+23/02/2026,1713,valid,
+25/02/2026,1713,valid,
+26/02/2026,1713,invalid,Ambient transition
+28/02/2026,1713,valid,
+02/03/2026,1713,valid,
+09/03/2026,1713,valid,
+10/03/2026,1713,invalid,other:Ambient transition
+11/03/2026,1713,valid,strong_hives_in_weak_bin
+12/03/2026,1713,valid,other
+19/03/2026,1713,valid,Singles invalid
+01/02/2026,1723,valid,
+02/02/2026,1723,valid,
+15/02/2026,1723,valid,other
+16/02/2026,1723,valid,other
+17/02/2026,1723,valid,other
+18/02/2026,1723,invalid,unstable ambient and hive data
+19/02/2026,1723,valid,Release under clipping
+22/02/2026,1723,valid,
+26/02/2026,1723,valid,
+05/03/2026,1723,valid,
+08/03/2026,1723,valid,
+19/03/2026,1723,valid,other
+28/01/2026,1730,invalid,Interventions
+08/02/2026,1730,needs_recalibration,
+14/02/2026,1730,needs_recalibration,
+18/02/2026,1730,needs_recalibration,"Not perfect, release under clipping with ambient compensation "
+26/02/2026,1730,invalid,Ambient transition
+28/02/2026,1730,needs_recalibration,
+03/03/2026,1730,valid,
+09/03/2026,1730,invalid,Ambient transition
+10/03/2026,1730,valid,other
+11/03/2026,1730,valid,temp drop
+12/03/2026,1730,invalid,other:Probably started removals
+23/03/2026,1730,valid,avg_5day_bee_frames_diff_>_1
+14/02/2026,1764,needs_recalibration,
+17/02/2026,1764,invalid,unstable data
+18/02/2026,1764,needs_recalibration,Data still not stable but release under clipping
+28/02/2026,1764,needs_recalibration,
+03/03/2026,1764,valid,
+08/03/2026,1764,valid,
+09/03/2026,1764,valid,
+10/03/2026,1764,valid,other
+11/03/2026,1764,valid,temp drop
+12/03/2026,1764,invalid,other:Started removals?
+14/03/2026,1764,valid,Some hives not stable
+15/03/2026,1764,invalid,Data not stable
+16/03/2026,1764,invalid,Removal noise
+17/03/2026,1764,invalid,Removals and uninstllation
+18/03/2026,1764,invalid,Removals
+19/03/2026,1764,valid,"Must publish because of grace end, but clipping is stable. Removals"
+21/03/2026,1764,invalid,Some hives are dipping
+22/03/2026,1764,invalid,Ambient transition
+26/01/2026,1768,needs_recalibration,
+29/01/2026,1768,invalid,on the move (disabling model)
+10/02/2026,1768,needs_recalibration,
+14/02/2026,1768,needs_recalibration,
+17/02/2026,1768,valid,other
+18/02/2026,1768,valid,other
+19/02/2026,1768,valid,
+22/02/2026,1768,valid,
+01/03/2026,1768,valid,
+09/03/2026,1768,valid,
+10/03/2026,1768,valid,other
+11/03/2026,1768,valid,other
+12/03/2026,1768,valid,unbalanced_configuration
+15/03/2026,1768,valid,
+19/03/2026,1768,invalid,Removals
+22/03/2026,1768,invalid,Data not stable
+23/03/2026,1768,valid,"Grance end, must publish. Taking a hit on clipping"
+04/02/2026,1793,needs_recalibration,
+07/02/2026,1793,valid,
+08/02/2026,1793,invalid,data stabilization
+10/02/2026,1793,needs_recalibration,
+04/03/2026,1793,valid,Some gateways not stable
+05/03/2026,1793,valid,
+08/03/2026,1793,invalid,removal
+10/03/2026,1793,valid,other:After removal
+11/03/2026,1793,invalid,other:Removals left over.
+12/03/2026,1793,valid,other:Removal leftovers.
+14/03/2026,1793,invalid,"Post removal, seems like switch not singles and not stable"
+15/03/2026,1793,invalid,"Switching to singles after removals, only a few sensors left."
+16/03/2026,1793,valid,Not valid for singles.
+19/03/2026,1793,invalid,"Mixed configuration with low sensor count, not supported"
+26/02/2026,1794,valid,Clipping guard
+01/03/2026,1794,valid,Not all hives are stable
+10/03/2026,1794,invalid,other:Some data not stable
+11/03/2026,1794,invalid,other:Data decreasing and not stable
+12/03/2026,1794,valid,unbalanced_configuration
+15/03/2026,1794,invalid,Data dipping
+19/03/2026,1794,invalid,Removals
+21/03/2026,1794,invalid,Data not stable
+22/03/2026,1794,invalid,Data not stable
+23/03/2026,1794,valid,"Grance end, must publish. Clipping relatively stable"
+28/01/2026,1838,invalid,Interventions
+29/01/2026,1838,invalid,interventions
+15/02/2026,1838,needs_recalibration,other
+18/02/2026,1838,valid,other
+23/02/2026,1838,valid,
+26/02/2026,1838,valid,
+01/03/2026,1838,valid,
+04/03/2026,1838,valid,
+11/03/2026,1838,valid,other
+14/03/2026,1838,invalid,Data not stable
+15/03/2026,1838,needs_recalibration,other
+18/03/2026,1838,valid,Singles invalid
+20/02/2026,1884,invalid,Still stabilize after fixing installation
+22/02/2026,1884,valid,
+25/02/2026,1884,valid,
+26/02/2026,1884,valid,
+09/03/2026,1884,needs_recalibration,Some unstable hives
+16/03/2026,1884,needs_recalibration,Recalibrated model but data still dipping. Near grace end
+19/03/2026,1884,valid,"Must publish because of grace end, but clipping is stable. Transition to singles"
+22/03/2026,1884,invalid,Data not stable
+23/03/2026,1884,invalid,Data not stable
+04/02/2026,2703,invalid,
+14/02/2026,2703,needs_recalibration,
+19/02/2026,2703,needs_recalibration,Relying on clipping. Data not stable
+22/02/2026,2703,needs_recalibration,
+26/02/2026,2703,needs_recalibration,
+02/03/2026,2703,valid,Some hives are unstable
+05/03/2026,2703,invalid,Some hives not stable better to wait
+10/03/2026,2703,valid,other
+11/03/2026,2703,valid,other
+12/03/2026,2703,invalid,other:Data not stable
+14/03/2026,2703,valid,
+15/03/2026,2703,valid,other
+19/03/2026,2703,valid,Transition to singles. Need to recheck
+22/03/2026,2703,invalid,Ambient transition
+20/01/2026,2777,needs_recalibration,
+26/01/2026,2777,needs_recalibration,
+29/01/2026,2777,invalid,interventions
+31/01/2026,2777,invalid,"not stable, in deployment"
+22/02/2026,2777,valid,
+12/03/2026,2777,valid,
+15/03/2026,2777,valid,other
+18/03/2026,2777,valid,other
+19/03/2026,2777,valid,removals
+21/03/2026,2777,invalid,Data and ambient not stable
+22/03/2026,2777,invalid,Data not stable
+01/02/2026,2799,valid,
+02/02/2026,2799,invalid,
+08/02/2026,2799,invalid,stabilize after intervention
+09/02/2026,2799,needs_recalibration,
+12/02/2026,2799,valid,
+22/02/2026,2799,valid,
+23/02/2026,2799,valid,
+01/03/2026,2799,valid,
+09/03/2026,2799,invalid,Ambient transition
+10/03/2026,2799,valid,avg_5day_bee_frames_diff_>_1
+11/03/2026,2799,valid,other
+12/03/2026,2799,valid,other
+15/03/2026,2799,invalid,Uninstallation events.
+16/03/2026,2799,valid,Not valid for singles
+23/03/2026,2799,valid,avg_5day_bee_frames_diff_>_1
+08/02/2026,2805,valid,
+09/02/2026,2805,needs_recalibration,
+12/02/2026,2805,invalid,data not stable
+14/02/2026,2805,needs_recalibration,
+17/02/2026,2805,valid,other
+08/03/2026,2805,valid,
+09/03/2026,2805,invalid,Some hives data not stable
+10/03/2026,2805,valid,other:Not all stable
+11/03/2026,2805,valid,strong_hives_in_weak_bin
+12/03/2026,2805,valid,unbalanced_configuration
+15/03/2026,2805,valid,other
+19/03/2026,2805,invalid,Removals
+21/03/2026,2805,valid,Must publish because of 5 days grace end. Ambient transition makes data still not stable
+22/03/2026,2805,invalid,Ambient transition
+23/03/2026,2805,valid,Relying on clipping
+27/01/2026,2834,valid,
+28/01/2026,2834,valid,
+29/01/2026,2834,needs_recalibration,
+08/02/2026,2834,needs_recalibration,
+11/02/2026,2834,needs_recalibration,
+14/02/2026,2834,needs_recalibration,
+17/02/2026,2834,needs_recalibration,other
+22/02/2026,2834,needs_recalibration,
+25/02/2026,2834,valid,
+26/02/2026,2834,invalid,Unstable ambient and hive data
+28/02/2026,2834,needs_recalibration,"Relying on clipping, still hot gateways"
+03/03/2026,2834,invalid,Unstable data
+08/03/2026,2834,valid,
+12/03/2026,2834,valid,unbalanced_configuration
+15/03/2026,2834,invalid,Data still not stable
+16/03/2026,2834,valid,"Near grace end, still removal noise but clipping stable"
+17/03/2026,2834,invalid,removals
+18/03/2026,2834,invalid,Removals
+19/03/2026,2834,valid,"Must publish because of grace end, but clipping is stable. Removals noise"
+18/02/2026,2854,invalid,unstable data
+19/02/2026,2854,invalid,Unstable data
+22/02/2026,2854,valid,
+23/02/2026,2854,valid,
+24/02/2026,2854,valid,
+01/03/2026,2854,valid,
+08/03/2026,2854,valid,
+15/03/2026,2854,invalid,Removals noise
+18/03/2026,2854,invalid,Removals noise
+19/03/2026,2854,valid,"Must publish because of grace end, but clipping is stable. Removals"
+22/03/2026,2854,invalid,Data not stable
+31/01/2026,2858,needs_recalibration,
+01/02/2026,2858,invalid,avg_5day_bee_frames_diff_>_1
+04/02/2026,2858,invalid,
+05/02/2026,2858,invalid,data unstable
+07/02/2026,2858,needs_recalibration,
+10/02/2026,2858,invalid,temperature drops
+11/02/2026,2858,valid,
+14/02/2026,2858,invalid,data not stable
+15/02/2026,2858,invalid,some data is unstable
+17/02/2026,2858,needs_recalibration,mode collapse but must release because of 5 days grace
+25/02/2026,2858,valid,
+26/02/2026,2858,valid,
+01/03/2026,2858,valid,
+02/03/2026,2858,valid,
+04/03/2026,2858,valid,
+10/03/2026,2858,valid,other
+11/03/2026,2858,valid,strong_hives_in_weak_bin
+12/03/2026,2858,invalid,other:Ambient over heating
+14/03/2026,2858,invalid,Looks like removal noise
+17/03/2026,2858,invalid,Still removal noise
+18/03/2026,2858,invalid,Ambient not stable
+19/03/2026,2858,valid,"Must publish because of grace end, but clipping is stable. Ambient split"
+21/03/2026,2858,invalid,Data and ambient not stable
+22/03/2026,2858,invalid,Data no stable
+23/03/2026,2858,invalid,Data not stable and ambient transition
+14/02/2026,2889,needs_recalibration,
+18/02/2026,2889,invalid,Data not stable with temperature drops
+19/02/2026,2889,valid,Repost
+22/02/2026,2889,valid,
+23/02/2026,2889,valid,
+24/02/2026,2889,valid,
+25/02/2026,2889,valid,
+05/03/2026,2889,valid,Some outliers
+08/03/2026,2889,needs_recalibration,
+15/03/2026,2889,invalid,Removals noise
+16/03/2026,2889,valid,"Near grace end, still removal noise but clipping stable"
+17/03/2026,2889,invalid,Removals.
+18/03/2026,2889,valid,Some data noise but clipping stable
+23/03/2026,2889,invalid,Ambient and data not stable
+01/03/2026,2901,valid,
+15/03/2026,2901,valid,other
+17/03/2026,2901,invalid,Removals
+18/03/2026,2901,invalid,Removals
+19/03/2026,2901,valid,"Must publish because of grace end, but clipping is stable. Ambient transition and data noise"
+22/03/2026,2901,invalid,Ambient not stable
+23/03/2026,2901,valid,Good enough after removals
+10/03/2026,2929,valid,other
+11/03/2026,2929,valid,unbalanced_configuration
+12/03/2026,2929,valid,other
+15/03/2026,2929,valid,other
+16/03/2026,2929,valid,other
+18/03/2026,2929,valid,other
+19/03/2026,2929,valid,other
+22/03/2026,2929,valid,other

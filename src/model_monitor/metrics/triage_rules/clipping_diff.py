@@ -52,7 +52,7 @@ def clipping_diff(ubf_df: pd.DataFrame) -> dict:
     Parameters
     ----------
     ubf_df:
-        Latest pred_raw and pred_clipped per sensor.  Must contain columns
+        Latest pred_raw and pred_clipped per group.  Must contain columns
         ``pred_raw`` and ``pred_clipped``.  Empty DataFrame → pass_metric=True
         (no data means the blocker will handle it separately).
 
@@ -68,7 +68,7 @@ def clipping_diff(ubf_df: pd.DataFrame) -> dict:
             "threshold":   CLIPPING_DIFF_THRESHOLD,
         }
 
-    valid = ubf_df.dropna(subset=["pred_raw", "pred_clipped"])
+    valid = ubf_df.dropna(subset=["pred_raw", "pred_clipped"]).copy()
     if valid.empty:
         return {
             "metric_name": METRIC_NAME,
@@ -77,7 +77,8 @@ def clipping_diff(ubf_df: pd.DataFrame) -> dict:
             "threshold":   CLIPPING_DIFF_THRESHOLD,
         }
 
-    avg_diff = float((valid["pred_raw"] - valid["pred_clipped"]).abs().mean())
+    valid['pred_diff'] = abs(valid['pred_raw'] - valid['pred_clipped'])
+    avg_diff = valid['pred_diff'].mean()
 
     return {
         "metric_name": METRIC_NAME,

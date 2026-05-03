@@ -58,7 +58,6 @@ date,group_id,status,reviewer_notes,consecutive_days_valid,consecutive_days_not_
 2026-03-18,483,invalid,Removals,0,1
 2026-03-19,483,invalid,Removals,0,2
 2026-03-21,483,invalid,Data not stable,0,3
-2026-03-22,483,valid,"Grace end, must publish. Heavily relying on clipping, still not stable",1,0
 2026-03-23,483,invalid,Data not stable,0,1
 2026-01-28,484,valid,,1,0
 2026-02-08,484,invalid,data not stable after intervention,0,1
@@ -195,7 +194,6 @@ date,group_id,status,reviewer_notes,consecutive_days_valid,consecutive_days_not_
 2026-03-18,766,invalid,Removals,0,1
 2026-03-19,766,invalid,Removals,0,2
 2026-03-21,766,invalid,Data not stable,0,3
-2026-03-22,766,valid,"Grace end, must publish. Heavily relying on clipping, still not stable",1,0
 2026-03-23,766,invalid,Data not stable,0,1
 2026-03-09,776,valid,Some hives removed,1,0
 2026-03-10,776,valid,"other:In removals, borderline valid",2,0
@@ -247,7 +245,6 @@ date,group_id,status,reviewer_notes,consecutive_days_valid,consecutive_days_not_
 2026-03-18,935,invalid,Removals,0,1
 2026-03-19,935,invalid,Removals,0,2
 2026-03-21,935,invalid,Data not stable,0,3
-2026-03-22,935,valid,"Grace end, must publish. Heavily relying on clipping, still not stable",1,0
 2026-03-23,935,invalid,Data not stable,0,1
 2026-02-18,940,invalid,unstable data,0,1
 2026-02-19,940,invalid,Unstable data,0,2
@@ -363,7 +360,6 @@ date,group_id,status,reviewer_notes,consecutive_days_valid,consecutive_days_not_
 2026-03-18,1691,valid,Some noise from removals. Singles not valid.,1,0
 2026-03-21,1691,invalid,Data not stable,0,1
 2026-03-22,1691,invalid,Data not stable,0,2
-2026-03-23,1691,valid,"Grance end, must publish. Clipping relatively stable",1,0
 2026-01-27,1693,invalid,last day intervention break model predictions,0,1
 2026-01-28,1693,invalid,,0,2
 2026-01-29,1693,invalid,on the move (disabling model),0,3
@@ -448,7 +444,6 @@ date,group_id,status,reviewer_notes,consecutive_days_valid,consecutive_days_not_
 2026-03-15,1768,valid,,10,0
 2026-03-19,1768,invalid,Removals,0,1
 2026-03-22,1768,invalid,Data not stable,0,2
-2026-03-23,1768,valid,"Grance end, must publish. Taking a hit on clipping",1,0
 2026-02-04,1793,needs_recalibration,,0,0
 2026-02-07,1793,valid,,1,0
 2026-02-08,1793,invalid,data stabilization,0,1
