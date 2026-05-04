@@ -110,7 +110,7 @@ def validation_history_query(group_ids: list[int], timestamp: str) -> str:
             tier2_status
         FROM data_lake_curated_data.beekeeper_beeframe_model_monitoring_validations
         WHERE group_id IN {g}
-          AND DATE(timestamp) <= DATE('{timestamp}')
+          AND DATE(timestamp) <= DATE('{timestamp}') 
         ORDER BY group_id, date DESC
     """
 
@@ -134,20 +134,18 @@ def clipping_diff_query(group_ids: list[int], timestamp: str) -> str:
     g = _at_least_2(tuple(group_ids))
     return f"""
         WITH latest_per_sensor AS (
-            SELECT
-                group_id,
-                mac         
-                pred_raw,
-                pred_clipped,
-                date      AS log_timestamp,
-                ROW_NUMBER() OVER(
-                PARTITION BY mac, date, model_name ORDER BY run_timestamp DESC
-                ) as rn
-            FROM data_lake_curated_data.beekeeper_beeframe_model_monitoring_preprocess
-            WHERE group_id IN {g}
-              AND DATE(date) = DATE('{timestamp}')
-              AND pred_raw IS NOT NULL
-        )ß
+            SELECT *
+            FROM
+                (SELECT 
+                    *,
+                    row_number() over(partition by mac, date, model_name order by run_timestamp desc) as rn
+                FROM beekeeper_beeframe_model_monitoring_preprocess
+                WHERE date = date('{timestamp}') 
+                    AND group_id IN {g}
+                    AND groups_in_season_ready_for_review = true
+                    )
+            WHERE rn = 1
+        )
 
         SELECT
             group_id,
@@ -156,7 +154,6 @@ def clipping_diff_query(group_ids: list[int], timestamp: str) -> str:
             pred_clipped,
             date
         FROM latest_per_sensor
-        WHERE rn = 1
     """
 
 
@@ -182,56 +179,60 @@ def inspection_signal_query(group_ids: list[int], timestamp: str) -> str:
     g = _at_least_2(tuple(group_ids))
     # INSPECTION_LOOKBACK_DAYS = 14
     return f"""
-        WITH active_sensors AS (
-            SELECT mac AS sensor_mac_address, group_id, yard_id
-            FROM data_lake_curated_data.sensor_daily_snapshot
-            WHERE group_id IN {g}
-              AND DATE(date) = DATE('{timestamp}')
-        ),
+        
 
         yard_inspections AS (
-            -- Recent inspections within the lookback window
-            SELECT
-                s.group_id,
-                yi.inspection_id,
-                yi.bee_frames_distribution
-            FROM data_lake_curated_data.yard_inspections yi
-            JOIN active_sensors s
-              ON s.yard_id = yi.yard_id
-            WHERE DATE(yi.utc_end_time) >= DATE('{timestamp}') - INTERVAL '14' DAY
-              AND DATE(yi.utc_end_time) <= DATE('{timestamp}')
+        select 
+            distinct
+                beekeeper_id as group_id
+                , orchards_inspected
+                , inspector
+                , created_at as date
+                , avg_bee_frames
+        from data_lake_curated_data.inspections_by_beekeeper_and_season
+        where beekeeper_id IN {g} 
+            AND created_at between DATE('{timestamp}') - INTERVAL '14' DAY AND DATE('{timestamp}')
         ),
 
         model_outputs AS (
-            -- Same-day latest model result per sensor
-            SELECT
-                s.group_id,
-                hum.sensor_mac_address,
-                hum.numerical_model_result,
-                ROW_NUMBER() OVER (
-                    PARTITION BY hum.sensor_mac_address
-                    ORDER BY hum.created DESC
-                ) AS rn
-            FROM data_lake_curated_data.hive_updates_metadata hum
-            JOIN active_sensors s
-              ON s.sensor_mac_address = hum.sensor_mac_address
-            WHERE DATE(hum.created) = DATE('{timestamp}')
-              AND hum.model = 'BEE_FRAMES'
-              AND hum.numerical_model_result IS NOT NULL
-              -- TODO: confirm numerical_model_result column name in hive_updates_metadata
+            SELECT 
+                date,
+                group_id
+            FROM
+                (SELECT 
+                    *,
+                    row_number() over(partition by mac, date, model_name order by run_timestamp desc) as rn
+                FROM beekeeper_beeframe_model_monitoring_preprocess
+                WHERE date = date('{timestamp}')
+                    AND group_id IN {g}
+                    AND groups_in_season_ready_for_review = true
+                    )
+            WHERE rn = 1
+            
         )
 
-        SELECT 'inspection' AS source, group_id, inspection_id, bee_frames_distribution,
-               NULL AS sensor_mac_address, NULL AS numerical_model_result
+        SELECT 
+            'inspection' AS source
+            , group_id
+            , orchards_inspected
+            , inspector
+            , date
+            , avg_bee_frames
+            , NULL AS numerical_model_result
         FROM yard_inspections
 
         UNION ALL
 
-        SELECT 'model' AS source, group_id, NULL AS inspection_id,
-               NULL AS bee_frames_distribution,
-               sensor_mac_address, numerical_model_result
+        SELECT 
+            'model' AS source
+            , group_id
+            , NULL AS orchards_inspected
+            , NULL AS inspector
+            , date
+            , NULL AS avg_bee_frames
+            , numerical_model_result
         FROM model_outputs
-        WHERE rn = 1
+  
     """
 
 
