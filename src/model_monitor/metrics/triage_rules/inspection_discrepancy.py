@@ -22,11 +22,6 @@ Algorithm
      discrepancy    = abs(inspection_avg - model_avg)
 4. Return pass_metric=False when discrepancy > INSPECTION_GAP_THRESHOLD.
 
-Parsing bee_frames_distribution
---------------------------------
-Example input: {"0": 5, "1": 3, "2": 8}
-Interpretation: 5 hives had 0 frames, 3 had 1 frame, 8 had 2 frames.
-Result: total_frames / total_hives.
 
 Threshold (SPECS.md)
 ---------------------
@@ -35,11 +30,11 @@ INSPECTION_GAP_THRESHOLD = 1.5 bee_frames
 
 Input
 -----
-inspections_df : pd.DataFrame
-    Columns: group_id, inspection_id, bee_frames_distribution (JSON string or dict)
+inspections_df : pd.DataFrame (inspections_by_beekeeper_and_season table)
+    Columns: group_id, orchards_inspected, avg_bee_frames,inspector,date
     Rows from the last INSPECTION_LOOKBACK_DAYS (14) days.
 
-model_df : pd.DataFrame
+model_df : pd.DataFrame (preprocess table)
     Columns: group_id, sensor_mac_address, numerical_model_result
     Latest result per sensor on the examination day.
 
@@ -57,31 +52,12 @@ dict with:
 
 from __future__ import annotations
 
-import json
-
 import pandas as pd
+
+
 
 METRIC_NAME               = "inspection_discrepancy"
 INSPECTION_GAP_THRESHOLD  = 1.5  # bee_frames — from SPECS.md
-
-
-def _parse_distribution(dist) -> float | None:
-    """Parse a bee_frames_distribution dict/string into a mean bee_frames value."""
-    if dist is None:
-        return None
-    if isinstance(dist, str):
-        try:
-            dist = json.loads(dist)
-        except (ValueError, TypeError):
-            return None
-    if not isinstance(dist, dict) or not dist:
-        return None
-    try:
-        total_frames = sum(float(frames) * int(count) for frames, count in dist.items())
-        total_hives  = sum(int(count) for count in dist.values())
-    except (ValueError, TypeError):
-        return None
-    return total_frames / total_hives if total_hives else None
 
 
 def inspection_discrepancy(
@@ -94,7 +70,7 @@ def inspection_discrepancy(
     ----------
     inspections_df:
         Inspection rows from the last 14 days.  Must contain columns
-        ``group_id``, ``inspection_id``, ``bee_frames_distribution``.
+        ``group_id``, ``orchards_inspected``, ``avg_bee_frames``.``date``,``inspector``
         May be empty — if so, pass_metric=True (no inspections → no signal).
 
     model_df:
@@ -112,17 +88,7 @@ def inspection_discrepancy(
         "model_avg":        None,
         "inspection_count": 0,
     }
-
-    if inspections_df.empty:
-        return {**_base, "pass_metric": True, "value": None}
-
-    parsed = inspections_df["bee_frames_distribution"].apply(_parse_distribution).dropna()
-    if parsed.empty:
-        return {**_base, "pass_metric": True, "value": None}
-
-    inspection_avg   = float(parsed.mean())
-    inspection_count = int(len(parsed))
-
+    
     if model_df.empty or "numerical_model_result" not in model_df.columns:
         return {
             **_base,
@@ -143,6 +109,19 @@ def inspection_discrepancy(
         }
 
     model_avg    = float(model_vals.mean())
+
+    if inspections_df.empty or "avg_bee_frames" not in inspections_df.columns:
+        return {**_base, "pass_metric": True, "value": None}
+    
+    parsed = inspections_df['avg_bee_frames'].dropna()
+    
+    if parsed.empty:
+        return {**_base, "pass_metric": True, "value": None}
+
+    inspection_avg   = float(parsed.mean())
+    inspection_count = int(len(parsed))
+
+    
     discrepancy  = abs(inspection_avg - model_avg)
 
     return {
