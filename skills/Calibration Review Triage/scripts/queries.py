@@ -45,48 +45,27 @@ def candidates_query(timestamp: str) -> str:
       • That deployment was made at least STALE_DAYS_THRESHOLD (3) days before ``timestamp``.
 
     Returns columns:
-        group_id, group_name, deployment_timestamp, days_since_deployment
+        group_id, deployment_timestamp, days_since_deployment
     """
-    # STALE_DAYS_THRESHOLD = 3
+    
     return f"""
-        WITH active_groups AS (
-            SELECT
-                sb.group_id,
-                sb.group_name
-            FROM data_lake_curated_data.seasonal_beekeepers sb
-            WHERE DATE('{timestamp}') >= DATE(sb.general_start_date)
-              AND DATE('{timestamp}') <= DATE(sb.general_end_date)
-              AND sb.is_test = false
-              AND sb.activity_type = 'POLLINATION'
-              AND sb.group_type = 'BEEKEEPER'
-        ),
 
-        latest_deployment AS (
-            -- Latest hive_update per group as a proxy for deployment timestamp.
-            -- TODO: replace with a dedicated model-deployments table if available.
             SELECT
-                sds.group_id,
-                MAX(hum.created) AS deployment_timestamp
-            FROM data_lake_curated_data.hive_updates_metadata hum
-            JOIN data_lake_curated_data.sensor_daily_snapshot sds
-              ON sds.mac = hum.sensor_mac_address
-             AND DATE(hum.created) = sds.date
-            WHERE sds.group_id IN (SELECT group_id FROM active_groups)
-              AND hum.model = 'BEE_FRAMES'
-            GROUP BY sds.group_id
-        )
-
-        SELECT
-            ag.group_id,
-            ag.group_name,
-            ld.deployment_timestamp,
-            DATE_DIFF('day', DATE(ld.deployment_timestamp), DATE('{timestamp}'))
-                AS days_since_deployment
-        FROM active_groups ag
-        JOIN latest_deployment ld
-          ON ld.group_id = ag.group_id
-        WHERE DATE_DIFF('day', DATE(ld.deployment_timestamp), DATE('{timestamp}')) >= 3
-    """
+                distinct
+                 group_id
+                , calibration_date as deployment_timestamp
+                ,date_diff('day', calibration_date, date('{timestamp}')) AS days_since_deployment
+            FROM
+                (SELECT 
+                    *,
+                    row_number() over(partition by mac, date, model_name order by run_timestamp desc) as rn
+                FROM data_lake_curated_data.beekeeper_beeframe_model_monitoring_preprocess
+                WHERE date = date('{timestamp}') 
+                    AND groups_in_season_ready_for_review = true
+                    )
+            WHERE rn = 1
+            
+            """
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +118,7 @@ def clipping_diff_query(group_ids: list[int], timestamp: str) -> str:
                 (SELECT 
                     *,
                     row_number() over(partition by mac, date, model_name order by run_timestamp desc) as rn
-                FROM beekeeper_beeframe_model_monitoring_preprocess
+                FROM data_lake_curated_data.beekeeper_beeframe_model_monitoring_preprocess
                 WHERE date = date('{timestamp}') 
                     AND group_id IN {g}
                     AND groups_in_season_ready_for_review = true
@@ -202,7 +181,7 @@ def inspection_signal_query(group_ids: list[int], timestamp: str) -> str:
                 (SELECT 
                     *,
                     row_number() over(partition by mac, date, model_name order by run_timestamp desc) as rn
-                FROM beekeeper_beeframe_model_monitoring_preprocess
+                FROM data_lake_curated_data.beekeeper_beeframe_model_monitoring_preprocess
                 WHERE date = date('{timestamp}')
                     AND group_id IN {g}
                     AND groups_in_season_ready_for_review = true
@@ -337,33 +316,33 @@ def auto_review_score_query(group_ids: list[int], timestamp: str) -> str:
     # AUTO_REVIEW_LOOKBACK_DAYS = 21
     return f"""
         WITH deduped AS (
-            -- Earliest log per (group, sensor, input_date) as specified in SPECS
-            SELECT
-                group_id,
-                mac                AS sensor_mac_address,
-                DATE(run_date)     AS input_date,
-                pred_raw,
-                run_timestamp      AS log_timestamp,
-                ROW_NUMBER() OVER (
-                    PARTITION BY group_id, mac, DATE(run_date)
-                    ORDER BY run_timestamp ASC
-                ) AS rn
-            FROM data_lake_curated_data.beekeeper_beeframe_model_monitoring_preprocess
-            WHERE group_id IN {g}
-              AND DATE(run_date) >= DATE('{timestamp}') - INTERVAL '21' DAY
-              AND DATE(run_date) <= DATE('{timestamp}')
-              AND pred_raw IS NOT NULL
+            
+            SELECT *
+            FROM
+                (SELECT 
+                    group_id
+                    , mac
+                    , date as input_date
+                    , pred_raw
+                    , row_number() over(partition by mac, date, model_name order by run_timestamp desc) as rn
+                FROM data_lake_curated_data.beekeeper_beeframe_model_monitoring_preprocess
+                WHERE date between DATE('{timestamp}') - INTERVAL '21' DAY AND DATE('{timestamp}')
+                    AND group_id IN {g}
+                    AND groups_in_season_ready_for_review = true
+                    )
+            WHERE rn = 1
         )
 
         SELECT
-            group_id,
-            sensor_mac_address,
-            input_date,
-            pred_raw,
-            log_timestamp
+              group_id
+            , mac
+            , input_date
+            , pred_raw
         FROM deduped
-        WHERE rn = 1
-        ORDER BY group_id, sensor_mac_address, input_date
+        ORDER BY group_id, mac, input_date
+        
+
+        
     """
 
 
@@ -386,35 +365,24 @@ def hu_stats_query(group_ids: list[int], timestamp: str) -> str:
     """
     g = _at_least_2(tuple(group_ids))
     return f"""
-        WITH latest_per_hive AS (
-            SELECT
-                sds.group_id,
-                DATE(hum.created)          AS activity_date,
-                hum.sensor_mac_address     AS hive_id,
-                -- TODO: confirm bee_frames column name in hive_updates_metadata
-                hum.numerical_model_result AS number_of_bee_frames,
-                ROW_NUMBER() OVER (
-                    PARTITION BY sds.group_id, DATE(hum.created), hum.sensor_mac_address
-                    ORDER BY hum.created DESC
-                ) AS rn
-            FROM data_lake_curated_data.hive_updates_metadata hum
-            JOIN data_lake_curated_data.sensor_daily_snapshot sds
-              ON sds.mac = hum.sensor_mac_address
-             AND DATE(hum.created) = DATE(sds.date)
-            WHERE sds.group_id IN {g}
-              AND DATE(hum.created) <= DATE('{timestamp}')
-              AND hum.model = 'BEE_FRAMES'
-        )
-
-        SELECT
-            group_id,
-            activity_date,
-            hive_id,
-            number_of_bee_frames
-        FROM latest_per_hive
-        WHERE rn = 1
-        ORDER BY group_id, activity_date DESC
-    """
+            SELECT 
+                date, 
+                group_id, 
+                valid
+            FROM (
+                SELECT 
+                    DATE(created) AS date,
+                    group_id,
+                    valid,
+                    ROW_NUMBER() OVER (PARTITION BY group_id ORDER BY created DESC) as rn
+                FROM data_lake_curated_data.hive_updates
+                WHERE created BETWEEN date('2026-01-10') AND DATE('{timestamp}')
+                AND validation_time IS NOT NULL
+                AND group_id IN {g}
+            ) AS latest_records
+            WHERE rn = 1
+        
+          """
 
 
 # ---------------------------------------------------------------------------

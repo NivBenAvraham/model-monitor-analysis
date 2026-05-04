@@ -148,7 +148,7 @@ def _compute_features(recent_df: pd.DataFrame, full_df: pd.DataFrame) -> dict | 
 
     # ── sensor_temporal_cv ─────────────────────────────────────────────────
     sensor_cv = (
-        full_df.groupby("sensor_mac_address")["pred_raw"]
+        full_df.groupby("mac")["pred_raw"]
         .agg(lambda s: s.std() / s.mean() if s.mean() != 0 else 0.0)
     )
     sensor_temporal_cv = float(sensor_cv.median()) if not sensor_cv.empty else 0.0
