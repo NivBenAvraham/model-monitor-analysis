@@ -33,6 +33,7 @@ from typing import Callable
 import pandas as pd
 from pyathena import connect
 from pyathena.pandas.cursor import PandasCursor
+import awswrangler as wr
 
 # ---------------------------------------------------------------------------
 # Athena config
@@ -168,3 +169,23 @@ def make_reader(database: str) -> Callable[[str], pd.DataFrame]:
         return _exec(sql, database)
     _reader.__doc__ = f"Read SQL from {database}."
     return _reader
+
+
+def get_query(db:str,query:str) -> pd.DataFrame:
+    try:
+        df = wr.athena.read_sql_query(
+            query,
+            database=db,
+            ctas_approach=False,
+            workgroup = 'data_lake_data_science'
+            )
+        
+        if df.empty:
+            print('-- Query got back 0 rows -- ')
+            return pd.DataFrame()
+        
+        return df
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return pd.DataFrame()
