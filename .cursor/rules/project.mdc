@@ -5,20 +5,114 @@ alwaysApply: true
 
 # Repo Conventions
 
-## Structure
-- `src/model_monitor/ingestion/` — data loading only
-- `src/model_monitor/metrics/` — metric computation only
-- `src/model_monitor/decision/` — model health logic only
-- `src/model_monitor/reporting/` — output and reporting only
-- `src/model_monitor/utils/` — shared helpers
-- `notebooks/exploration/` — exploration only, never imported by src/
-- `configs/thresholds.yaml` — all threshold values live here, never hardcoded
+## Purpose
 
-## Rules
-- Keep the four layers strictly separate: ingestion → metrics → decision → reporting
+This repo is a **model monitor** — a single pipeline that evaluates whether the
+bee-frames model can be trusted for a given `(group_id, date)`.
+
+The pipeline contains two rules, each answering a different question about the same unit:
+
+| Rule | Decision module | Question | Output |
+|---|---|---|---|
+| **Temperature Health** | `decision/temperature_health_rule.py` | Are the hive temperatures physically consistent? | `VALID` / `INVALID` |
+| **Calibration Review Triage** | `decision/triage_rule.py` | Does this group need a human calibration review? | `auto_valid` / `needs_review` |
+
+Both rules operate on `(group_id, date)`. The monitor pipeline orchestrates data loading,
+metric computation, and rule evaluation — the rules are pure decision functions within it.
+
+---
+
+## `src/model_monitor/` Layer Structure
+
+```
+ingestion/   → metrics/   → decision/   → reporting/
+```
+
+- `ingestion/`   — Athena SQL helpers only (no business logic)
+- `metrics/`     — pure metric functions: take DataFrames, return result dicts
+- `decision/`    — deterministic scoring rules: take metric result lists, return prediction dicts
+- `reporting/`   — output formatting only
+- `utils/`       — shared helpers (data loading, resampling)
+
+**Rules:**
+- Keep the four layers strictly separate — no layer may import from a layer to its right
 - `decision/` must use deterministic logic only — no LLM calls, ever
-- `ModelHealth` outcomes are exactly: `VALID`, `NEEDS_CALIBRATION`, `INVALID`
 - Thresholds go in `configs/thresholds.yaml`, never hardcoded in Python
-- Notebooks are exploration only — no production logic in notebooks
-- Write a stub test for every new module added under `src/`
+- Notebooks live in `explore_notebooks/` — exploration only, never imported by `src/`
 - Do not add abstractions, base classes, or frameworks without being explicitly asked
+
+---
+
+## Metrics Subpackages
+
+### `metrics/temperature/` — group-level temperature checks
+Each function takes pre-loaded DataFrames and returns `{"metric_name": str, "pass_metric": bool | None, ...}`.
+
+| File | ID | Role in temperature_health_rule |
+|---|---|---|
+| `ambient_temperature_volatility.py` | ATV | **Mandatory gate** |
+| `ambient_stability.py` | R1 | Scored |
+| `ambient_range.py` | R2 | Scored |
+| `bucket_reference_adherence.py` | R3 | **Mandatory gate** |
+| `sensor_spread_within_bucket.py` | R4 | Scored |
+| `bucket_temporal_stability.py` | R5 | **Mandatory gate** |
+| `small_hive_ambient_tracking.py` | R6a | Scored |
+| `large_hive_thermoregulation.py` | R6b | Scored |
+| `bucket_temperature_ordering.py` | R6c | Scored |
+| `bucket_diurnal_amplitude.py` | R7 | **Mandatory gate** |
+
+### `metrics/triage_rules/` — signals for Calibration Review Triage
+Each function takes pre-loaded DataFrames and returns `{"metric_name": str, "pass_metric": bool | None, ...}`.
+
+| File | Signal | Description |
+|---|---|---|
+| `clipping_diff.py` | A | Raw vs clipped prediction gap |
+| `inspection_discrepancy.py` | B | Inspector count vs model output |
+| `thermoreg_dipping.py` | C | Yards with rising temperature dispersion (14d) |
+| `auto_review_score.py` | D | Composite UBF stability score (21d) |
+| `thermoreg_dipping_7d.py` | C (7d) | 7-day variant of Signal C |
+| `auto_review_score_7d.py` | D (7d) | 7-day variant of Signal D |
+
+---
+
+## Decision Rules
+
+### `decision/temperature_health_rule.py`
+`score_group_date(metric_results, l1_pct_pass) → dict`
+
+1. **4 mandatory gates** (ATV, R3, R5, R7) — any fails → `INVALID`, confidence 1
+2. **Score 6 non-gate metrics** (R1, R2, R4, R6a, R6b, R6c) — pass_count / n_assessed
+3. **Threshold**: 5/6 → `VALID` (confidence 4 or 5); ≤ 4/6 → `INVALID`
+
+Outputs: `prediction` (`"VALID"` / `"INVALID"`), `confidence` (1–5), `failed_gates`, `valid_score`.
+
+### `decision/triage_rule.py`
+`score_group_date(metric_results, last_status) → dict`
+
+- `auto_valid` when: all 4 signals returned a result **AND** `last_status == "valid"`
+- `needs_review` otherwise
+
+Outputs: `prediction` (`"auto_valid"` / `"needs_review"`), `passed_metrics`, `reason`, `signals`.
+
+---
+
+## Thresholds
+
+All thresholds live in `configs/thresholds.yaml`.
+
+```yaml
+metrics:
+  temperature:
+    ambient_stability: ...   # R1
+    ambient_range: ...       # R2
+    ...
+    bucket_diurnal_amplitude: ...  # R7
+
+decision:
+  temperature_health_rule:
+    l1_min_pass_rate: ...
+    atv_mandatory / r3_mandatory / r5_mandatory / r7_mandatory: ...
+    score_confidence_5_min / score_confidence_4_min: ...
+```
+
+Never hardcode threshold values in Python — always read from `configs/thresholds.yaml`.

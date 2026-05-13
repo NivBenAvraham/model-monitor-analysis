@@ -122,8 +122,9 @@ Human-labelled model status per group per date. Source for `extraction_plan.py`.
 | `date` | `YYYY-MM-DD` | The evaluation date |
 | `group_id` | int | Beekeeper group |
 | `status` | `valid` / `invalid` / `needs_recalibration` | Human ground truth label |
+| `reviewer_notes` | string / NaN | Free-text note from `beekeeper_beeframe_model_monitoring_validations` |
 
-**51 groups, 643 labelled dates** (as of 2026-03-26).
+**51 groups, 643 labelled dates. 393 rows have reviewer_notes.**
 
 ---
 
@@ -153,31 +154,31 @@ Some internal database names use the misspelling `CURRATED` (two R's). This is i
 
 ---
 
-## Two-Layer Architecture
+## Monitor Architecture
+
+The **model monitor** is a single pipeline that evaluates each `(group_id, date)`.
+It contains two rules — each computing different metrics and making a different decision:
 
 ```
-Raw sensor data (per sensor, per group, per date)
+(group_id, date)
         │
-        ▼
-┌─────────────────────────────────────────────────────┐
-│  Layer 1: sensor_group_segment  (per SENSOR)        │
-│  "Does this sensor's physics match the predicted    │
-│   hive size (small / medium / large)?"              │
-│  Output: PASS / WARNING / FAIL per sensor           │
-│  Data unit: individual sensor (~341K rows total)    │
-│  Skill: skills/sensor_group_segment/                │
-└─────────────────────────────────────────────────────┘
-        │  aggregate per (group_id, date)
-        ▼
-┌─────────────────────────────────────────────────────┐
-│  Layer 2: group_model_temperature_health            │
-│           (per GROUP per DATE)  ← NOT YET BUILT     │
-│  "Is the model valid for this group today?"         │
-│  Output: VALID / INVALID per (group_id, date)       │
-│  Ground truth: ground_truth/ CSV                    │
-│  Skill: skills/group_model_temperature_health/      │
-└─────────────────────────────────────────────────────┘
+        ├─── Rule 1: Temperature Health ──────────────────────────────────────┐
+        │                                                                      │
+        │    sensor/gateway parquets → metrics/temperature/* (10 metrics)     │
+        │    decision/temperature_health_rule.py                               │
+        │    → VALID / INVALID                                                 │
+        │    Skill: skills/group_model_temperature_health/                     │
+        │                                                                      │
+        └─── Rule 2: Calibration Review Triage ───────────────────────────────┘
+                                                                               │
+             Athena (UBF, inspections, validations) → metrics/triage_rules/*  │
+             decision/triage_rule.py                                           │
+             → auto_valid / needs_review                                       │
+             Skill: skills/Calibration Review Triage/                         │
 ```
+
+The rules are **pure decision functions** — they take a list of metric result dicts
+and return a prediction dict. The monitor pipeline owns data loading and orchestration.
 
 ---
 
@@ -187,30 +188,48 @@ Raw sensor data (per sensor, per group, per date)
 src/model_monitor/
   ingestion/          ← Athena SQL helpers (raw_bee_frames_table, hive_updates_query)
   metrics/
-    sensor_group_segment.py   ← Layer 1: per-sensor compute() + grade()
-    temperature/              ← Temperature family metrics (group-level checks)
-      __init__.py             ← re-exports all functions for convenient import
-      ambient_temperature_volatility.py   (–)   night-to-night ambient jump
-      ambient_stability.py                (R1)  gateway CV ≤ 0.55
-      ambient_range.py                    (R2)  ambient ∈ [2, 50] °C
-      bucket_reference_adherence.py       (R3)  mean per bucket inside canonical band
-      sensor_spread_within_bucket.py      (R4)  inter-sensor spread ≤ 5 °C
-      bucket_temporal_stability.py        (R5)  temporal std within limits
-      small_hive_ambient_tracking.py      (R6a) small-bucket r with ambient ≥ 0.40
-      large_hive_thermoregulation.py      (R6b) large-bucket r with ambient ≤ 0.85
-      bucket_temperature_ordering.py      (R6c) mean(small) < mean(medium) < mean(large)
+    sensor_group_segment.py   ← per-sensor compute() + grade() (PASS/FAIL)
+    temperature/              ← group-level temperature checks for Pipeline 1
+      __init__.py
+      ambient_temperature_volatility.py   (ATV gate)  night-to-night ambient jump
+      ambient_stability.py                (R1)         gateway CV ≤ 0.55
+      ambient_range.py                    (R2)         ambient ∈ [5, 50] °C
+      bucket_reference_adherence.py       (R3 gate)    bucket means in reference bands
+      sensor_spread_within_bucket.py      (R4)         inter-sensor spread per bucket
+      bucket_temporal_stability.py        (R5 gate)    bucket daily-mean std within cap
+      small_hive_ambient_tracking.py      (R6a)        small-bucket r with ambient
+      large_hive_thermoregulation.py      (R6b)        large-bucket r with ambient
+      bucket_temperature_ordering.py      (R6c)        mean(small) < medium < large
+      bucket_diurnal_amplitude.py         (R7 gate)    within-day swing per bucket
+    triage_rules/             ← signals for Pipeline 2 (Calibration Review Triage)
+      __init__.py
+      clipping_diff.py              (Signal A)  raw vs clipped prediction gap
+      inspection_discrepancy.py     (Signal B)  inspector count vs model output
+      thermoreg_dipping.py          (Signal C)  yards with rising temp dispersion (14d)
+      auto_review_score.py          (Signal D)  composite UBF stability score (21d)
+      thermoreg_dipping_7d.py       (Signal C, 7d variant)
+      auto_review_score_7d.py       (Signal D, 7d variant)
+  decision/
+    temperature_health_rule.py  ← Pipeline 1: score_group_date() → VALID/INVALID
+    triage_rule.py              ← Pipeline 2: score_group_date() → auto_valid/needs_review
   utils/
     data_utils.py     ← load_group_date_data(), iter_all(), load_all()
   reporting/
-  decision/
 ```
 
 **Import patterns:**
 ```python
-# temperature family — via subpackage
-from model_monitor.metrics.temperature import ambient_stability, bucket_reference_adherence
+# temperature metrics
+from model_monitor.metrics.temperature import ambient_stability, bucket_diurnal_amplitude
 
-# Layer 1
+# triage signals
+from model_monitor.metrics.triage_rules import clipping_diff, auto_review_score
+
+# decision rules
+from model_monitor.decision.temperature_health_rule import score_group_date
+from model_monitor.decision.triage_rule import score_group_date
+
+# sensor-level feature engineering
 from model_monitor.metrics.sensor_group_segment import compute, grade
 
 # data loading
