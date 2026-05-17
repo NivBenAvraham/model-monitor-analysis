@@ -1,0 +1,6 @@
+{
+  "scale_pos_weight": 0.3,
+  "max_depth": 4,
+  "min_child_weight": 5,
+  "gamma": 0.0
+}
