@@ -30,6 +30,7 @@ from model_monitor.metrics.temperature import (
     small_hive_ambient_tracking,
     large_hive_thermoregulation,
     bucket_temperature_ordering,
+    large_bucket_sensor_divergence,
 )
 
 
@@ -454,3 +455,83 @@ def test_bucket_temperature_ordering_gap_too_small() -> None:
         _make_sensor_hourly("large",  mean_temp=28.5),
     )
     assert bucket_temperature_ordering(sh)["pass_metric"] is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# R8 — large_bucket_sensor_divergence
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _make_divergent_large_sensors(n_stable: int, n_drop: int,
+                                   stable_temp: float = 34.0,
+                                   drop_temp: float = 22.0) -> pd.DataFrame:
+    """Build a large-bucket DataFrame where some sensors are warm, others cold."""
+    rows = []
+    base = pd.Timestamp("2026-03-01")
+    for day in range(2):
+        for hour in range(24):
+            ts = base + pd.Timedelta(days=day, hours=hour)
+            for i in range(n_stable):
+                rows.append({"hive_size_bucket": "large",
+                             "sensor_mac_address": f"stable_{i}",
+                             "timestamp": ts,
+                             "pcb_temperature_one": stable_temp})
+            for i in range(n_drop):
+                rows.append({"hive_size_bucket": "large",
+                             "sensor_mac_address": f"drop_{i}",
+                             "timestamp": ts,
+                             "pcb_temperature_one": drop_temp})
+    return pd.DataFrame(rows)
+
+
+def test_large_bucket_sensor_divergence_passes_tight_cluster() -> None:
+    """All large sensors at same temp → spread ≈ 0 → pass_metric=True."""
+    sh = _make_sensor_hourly("large", mean_temp=34.0)
+    result = large_bucket_sensor_divergence(sh)
+    assert result["pass_metric"] is True
+    assert result["value"]["large"] < 1.0
+
+
+def test_large_bucket_sensor_divergence_fails_drop_event() -> None:
+    """Half sensors hold at 34°C, half drop to 22°C → spread ≈ 6°C > 3 → False."""
+    sh = _make_divergent_large_sensors(n_stable=10, n_drop=10,
+                                        stable_temp=34.0, drop_temp=22.0)
+    result = large_bucket_sensor_divergence(sh)
+    assert result["pass_metric"] is False
+    assert result["value"]["large"] > 3.0
+
+
+def test_large_bucket_sensor_divergence_small_drop_passes() -> None:
+    """Only 1 sensor drops slightly → spread < 3 → pass_metric=True."""
+    sh = _make_divergent_large_sensors(n_stable=20, n_drop=1,
+                                        stable_temp=34.0, drop_temp=32.5)
+    result = large_bucket_sensor_divergence(sh)
+    assert result["pass_metric"] is True
+
+
+def test_large_bucket_sensor_divergence_no_large_passes() -> None:
+    """No large-bucket data → cannot evaluate → pass_metric=True by default."""
+    sh = _make_sensor_hourly("small", mean_temp=20.0)
+    result = large_bucket_sensor_divergence(sh)
+    assert result["pass_metric"] is True
+
+
+def test_large_bucket_sensor_divergence_medium_not_primary() -> None:
+    """Medium divergence alone does NOT fail the metric (large is primary)."""
+    rows = []
+    base = pd.Timestamp("2026-03-01")
+    for day in range(2):
+        for hour in range(24):
+            ts = base + pd.Timedelta(days=day, hours=hour)
+            # large — tight cluster
+            for i in range(5):
+                rows.append({"hive_size_bucket": "large",
+                             "sensor_mac_address": f"L{i}", "timestamp": ts,
+                             "pcb_temperature_one": 34.0})
+            # medium — very divergent (10°C spread)
+            for temp in [20.0, 30.0]:
+                rows.append({"hive_size_bucket": "medium",
+                             "sensor_mac_address": f"M{temp}", "timestamp": ts,
+                             "pcb_temperature_one": temp})
+    sh = pd.DataFrame(rows)
+    result = large_bucket_sensor_divergence(sh)
+    assert result["pass_metric"] is True   # large is fine → overall passes

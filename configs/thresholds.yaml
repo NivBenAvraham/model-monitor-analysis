@@ -51,6 +51,18 @@ metrics:
       medium: 25.0
       large:  14.0
 
+    large_bucket_sensor_divergence: # R8 — added 2026-05-18 (temperature-drop investigation)
+      # Max daily std of per-sensor daily means within the large bucket.
+      # Captures "some sensors plunge while others hold" events inside the large bucket.
+      # Calibrated on train split (423 pairs):
+      #   valid   max 3.50 °C (outlier group 47); 75th pct 0.71; mean 0.64
+      #   invalid max 5.25 °C (group 1144); top 3 invalids: 5.25, 3.40, 3.08
+      #   → threshold 3.0 °C: catches 3 extreme invalids, flags 2 valid outliers
+      # Not a universal separator — a niche metric for the most extreme drop events.
+      # Medium is informational only — does NOT affect pass_metric.
+      large:  3.0
+      medium: 6.0
+
     bucket_temperature_ordering:    # R6c — mandatory gate in decision rule
       min_gap_celsius: 1.5          # unchanged — anchors don't suggest tightening
 
@@ -85,3 +97,51 @@ decision:
     # With the new gates, conf-4 (1 miss ok) adds 8 TPs with ZERO extra FPs vs conf-5.
     score_confidence_5_min: 1.000   # 6/6 → confidence 5  (72 TP, 11 FP)
     score_confidence_4_min: 0.833   # 5/6 → confidence 4  (80 TP, 11 FP, one miss allowed)
+
+# ── pred_rules — individual metric thresholds ─────────────────────────────────
+# Calibrated on train split (299 pairs, 2026-05-18).
+# All thresholds from precision ≥ 0.90 sweep; direction = lower unless noted.
+pred_rules:
+
+  clipping_pressure:
+    # Used by pred_rule.py decision rule (PRIMARY signal = clip_diff_roll3).
+    # Fallback (< 2 days history → roll3 unavailable): use clip_diff_mean ≤ 0.60.
+    clip_diff_roll3: 0.591  # PRIMARY — 3-day rolling avg of mean |raw−clipped|
+    clip_diff_mean:  0.60   # FALLBACK — today's mean when roll3 unavailable
+    # Informational only (not used in decision):
+    clip_diff_p90:   1.50
+    pct_clipped:     0.64
+
+  clip_diff_daily:
+    # Daily (single-day) clipping-diff metrics.  Train performance at these thresholds:
+    #   clip_diff_mean ≤ 0.83 → P=0.910 R=0.555 (101 TP, 10 FP)
+    #   clip_diff_p90  ≤ 2.11 → P=0.902 R=0.604 (110 TP, 12 FP)  ← best recall
+    #   clip_diff_max  ≤ 3.80 → P=0.923 R=0.198 ( 36 TP,  3 FP)
+    clip_diff_mean: 0.83
+    clip_diff_p90:  2.11
+    clip_diff_max:  3.80
+
+  clip_diff_rolling:
+    # Rolling averages of daily clip_diff_mean.  Longer window → higher precision, lower recall.
+    #   clip_diff_mean_roll3 ≤ 0.79 → P=0.901 R=0.432 (73 TP,  8 FP)
+    #   clip_diff_mean_roll5 ≤ 0.64 → P=0.923 R=0.159 (24 TP,  2 FP)
+    #   clip_diff_mean_roll7 ≤ 0.63 → P=0.905 R=0.137 (19 TP,  2 FP)
+    clip_diff_mean_roll3: 0.79
+    clip_diff_mean_roll5: 0.64
+    clip_diff_mean_roll7: 0.63
+
+  pct_clipped:
+    # Fraction of sensors with |raw−clipped| > 0.01.  Rolling variants are near-perfect.
+    #   pct_clipped       ≤ 0.711 → P=0.905 R=0.313 (57 TP,  6 FP)
+    #   pct_clipped_roll3 ≤ 0.590 → P=1.000 R=0.030 ( 5 TP,  0 FP)
+    #   pct_clipped_roll7 ≤ 0.670 → P=1.000 R=0.029 ( 4 TP,  0 FP)
+    pct_clipped:       0.711
+    pct_clipped_roll3: 0.590
+    pct_clipped_roll7: 0.670
+
+  pred_raw_stats:
+    # Statistics on raw (unconstrained) model predictions.  Very low recall but high precision.
+    #   pred_raw_std   ≤ 1.132 → P=1.000 R=0.022 (4 TP, 0 FP)  ← perfect precision
+    #   pred_raw_range ≤ 8.311 → P=0.900 R=0.049 (9 TP, 1 FP)
+    pred_raw_std:   1.132
+    pred_raw_range: 8.311

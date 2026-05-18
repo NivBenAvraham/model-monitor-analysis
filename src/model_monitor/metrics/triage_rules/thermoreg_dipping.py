@@ -123,17 +123,19 @@ def thermoreg_dipping(yard_daily_df: pd.DataFrame) -> dict:
     }
 
     if yard_daily_df.empty or "temp_std" not in yard_daily_df.columns:
+        print('----1',len(yard_daily_df))
         return {**_base, "pass_metric": True, "value": None}
 
     df = yard_daily_df.sort_values(["yard_id", "date"]).copy()
 
     yard_trends: dict[str, str] = {}
-    for (yard_id, yard_name), yard_data in df.groupby(["yard_id", "yard_name"], sort=False):
+    for yard_id, yard_data in df.groupby(["yard_id"], sort=False):
         trend = _classify_yard(yard_data)
-        yard_trends[str(yard_name)] = trend
+        yard_trends[str(yard_id)] = trend
 
     all_classified = [t for t in yard_trends.values() if t != "insufficient_data"]
     if not all_classified:
+        print('---2')
         return {**_base, "pass_metric": True, "value": None, "yard_trends": yard_trends}
 
     dipping_yards = [name for name, t in yard_trends.items() if t == "dipping"]

@@ -147,8 +147,10 @@ def _compute_features(recent_df: pd.DataFrame, full_df: pd.DataFrame) -> dict | 
     cv_volatility = float(daily["cv"].std())
 
     # ── sensor_temporal_cv ─────────────────────────────────────────────────
+    # Accept either "sensor_mac_address" or "mac" column name
+    mac_col = "sensor_mac_address" if "sensor_mac_address" in full_df.columns else "mac"
     sensor_cv = (
-        full_df.groupby("mac")["pred_raw"]
+        full_df.groupby(mac_col)["pred_raw"]
         .agg(lambda s: s.std() / s.mean() if s.mean() != 0 else 0.0)
     )
     sensor_temporal_cv = float(sensor_cv.median()) if not sensor_cv.empty else 0.0

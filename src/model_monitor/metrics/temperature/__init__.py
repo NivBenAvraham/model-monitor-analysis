@@ -19,6 +19,7 @@ Import shortcuts:
         small_hive_ambient_tracking,
         large_hive_thermoregulation,
         bucket_temperature_ordering,
+        large_bucket_sensor_divergence,
     )
 """
 
@@ -35,6 +36,7 @@ from model_monitor.metrics.temperature.bucket_diurnal_amplitude import bucket_di
 from model_monitor.metrics.temperature.small_hive_ambient_tracking import small_hive_ambient_tracking
 from model_monitor.metrics.temperature.large_hive_thermoregulation import large_hive_thermoregulation
 from model_monitor.metrics.temperature.bucket_temperature_ordering import bucket_temperature_ordering
+from model_monitor.metrics.temperature.large_bucket_sensor_divergence import large_bucket_sensor_divergence
 
 __all__ = [
     "ambient_temperature_volatility",
@@ -48,4 +50,5 @@ __all__ = [
     "small_hive_ambient_tracking",
     "large_hive_thermoregulation",
     "bucket_temperature_ordering",
+    "large_bucket_sensor_divergence",
 ]
