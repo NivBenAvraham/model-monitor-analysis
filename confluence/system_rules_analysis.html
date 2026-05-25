@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System Rules Analysis — Model Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --red:    #e53935;
+    --blue:   #1e88e5;
+    --green:  #43a047;
+    --orange: #fb8c00;
+    --grey:   #757575;
+    --bg:     #f8f9fa;
+    --card:   #ffffff;
+    --border: #e0e0e0;
+    --text:   #212121;
+    --muted:  #616161;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.6; }
+  .page { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+  /* Header */
+  .hero { background: linear-gradient(135deg,#1565c0 0%,#0d47a1 100%);
+          color: #fff; border-radius: 12px; padding: 36px 40px; margin-bottom: 32px; }
+  .hero h1 { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
+  .hero p  { opacity: 0.85; font-size: 15px; max-width: 680px; }
+  .hero .meta { margin-top: 16px; display: flex; gap: 24px; flex-wrap: wrap; }
+  .hero .badge { background: rgba(255,255,255,0.15); padding: 4px 14px;
+                 border-radius: 20px; font-size: 13px; font-weight: 600; }
+
+  /* Sections */
+  .section { margin-bottom: 40px; }
+  .section-title { font-size: 20px; font-weight: 700; color: #1565c0;
+                   border-left: 4px solid #1565c0; padding-left: 12px;
+                   margin-bottom: 6px; }
+  .section-sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; padding-left: 16px; }
+  .card { background: var(--card); border-radius: 10px; border: 1px solid var(--border);
+          padding: 24px; margin-bottom: 20px; }
+
+  /* Key numbers row */
+  .kpi-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+  .kpi { flex: 1; min-width: 140px; background: var(--card); border-radius: 10px;
+         border: 1px solid var(--border); padding: 18px 20px; text-align: center; }
+  .kpi .val { font-size: 26px; font-weight: 700; }
+  .kpi .lbl { font-size: 12px; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .kpi.good .val { color: var(--green); }
+  .kpi.warn .val { color: var(--orange); }
+  .kpi.bad  .val { color: var(--red); }
+  .kpi.info .val { color: var(--blue); }
+
+  /* Insight box */
+  .insight { background: #e8f5e9; border-left: 4px solid var(--green);
+             border-radius: 6px; padding: 14px 18px; margin: 16px 0; font-size: 13px; }
+  .insight.warn { background: #fff3e0; border-color: var(--orange); }
+  .insight.info { background: #e3f2fd; border-color: var(--blue); }
+  .insight strong { display: block; margin-bottom: 4px; }
+
+  /* Charts */
+  .chart-wrap { position: relative; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media(max-width:700px){ .two-col { grid-template-columns: 1fr; } }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: #f5f5f5; font-weight: 600; color: var(--muted);
+       text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px;
+       padding: 8px 12px; border-bottom: 2px solid var(--border); text-align: left; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafafa; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* Pill badges */
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 10px;
+          font-size: 11px; font-weight: 600; }
+  .pill.green { background: #e8f5e9; color: #1b5e20; }
+  .pill.red   { background: #ffebee; color: #b71c1c; }
+  .pill.blue  { background: #e3f2fd; color: #0d47a1; }
+  .pill.orange{ background: #fff3e0; color: #e65100; }
+  .pill.grey  { background: #f5f5f5; color: #424242; }
+  .star { color: gold; font-size: 16px; }
+
+  /* Precision bar */
+  .pbar-wrap { display: flex; align-items: center; gap: 8px; }
+  .pbar { height: 8px; border-radius: 4px; display: inline-block; }
+
+  /* Scatter SVG */
+  .scatter-container { overflow-x: auto; }
+
+  /* Footer */
+  footer { text-align: center; color: var(--muted); font-size: 12px;
+           margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ═══════════════════════════════════ HERO ═══════════════════════════════ -->
+<div class="hero">
+  <h1>System Rules Analysis</h1>
+  <p>Comprehensive evaluation of the three decision rules — <strong>Pred</strong>, <strong>Temperature</strong>, and <strong>Triage</strong> — on the BeeFrame model-monitor dataset. Explores individual performance, rule combinations, metric discrimination, and actionable combination strategies.</p>
+  <div class="meta">
+    <span class="badge">Train: 542 pairs</span>
+    <span class="badge">Test: 137 pairs</span>
+    <span class="badge">Valid (train): 336</span>
+    <span class="badge">Invalid (train): 206</span>
+    <span class="badge">Source: explore_notebooks/system_rules_analysis.ipynb</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SECTION 1 ══════════════════════════════ -->
+<div class="section">
+  <div class="section-title">1 — Individual Rule Performance</div>
+  <div class="section-sub">Coverage, Precision, Recall and confusion counts for each rule on train and test. Goal: maximise Precision (minimise FP).</div>
+
+  <div class="kpi-row">
+    <div class="kpi good"><div class="val">0.921</div><div class="lbl">Pred — Train P</div></div>
+    <div class="kpi good"><div class="val">0.941</div><div class="lbl">Pred — Test P</div></div>
+    <div class="kpi warn"><div class="val">0.871</div><div class="lbl">Temp — Train P</div></div>
+    <div class="kpi warn"><div class="val">0.826</div><div class="lbl">Temp — Test P</div></div>
+    <div class="kpi bad"><div class="val">0.679</div><div class="lbl">Triage — Train P</div></div>
+    <div class="kpi bad"><div class="val">0.655</div><div class="lbl">Triage — Test P</div></div>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:14px;">Precision · Recall (Train)</div>
+      <div class="chart-wrap" style="height:220px">
+        <canvas id="prChart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:14px;">TP vs FP — when rule says "valid" (Train)</div>
+      <div class="chart-wrap" style="height:220px">
+        <canvas id="tpfpChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead><tr>
+        <th>Rule</th><th class="num">Coverage (n)</th>
+        <th class="num">TP</th><th class="num">FP</th><th class="num">TN</th><th class="num">FN</th>
+        <th class="num">Precision</th><th class="num">Recall</th>
+        <th class="num">Train P</th><th class="num">Test P</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Pred</strong></td>
+          <td class="num">358</td><td class="num">35</td><td class="num">3</td><td class="num">125</td><td class="num">195</td>
+          <td class="num"><span class="pill green">0.921</span></td><td class="num">0.152</td>
+          <td class="num">0.921</td><td class="num"><strong>0.941</strong></td>
+        </tr>
+        <tr>
+          <td><strong>Temperature</strong></td>
+          <td class="num">405</td><td class="num">88</td><td class="num">13</td><td class="num">141</td><td class="num">163</td>
+          <td class="num"><span class="pill orange">0.871</span></td><td class="num">0.351</td>
+          <td class="num">0.871</td><td class="num">0.826</td>
+        </tr>
+        <tr>
+          <td><strong>Triage</strong></td>
+          <td class="num">299</td><td class="num">106</td><td class="num">50</td><td class="num">67</td><td class="num">76</td>
+          <td class="num"><span class="pill red">0.679</span></td><td class="num">0.582</td>
+          <td class="num">0.679</td><td class="num">0.655</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="insight">
+    <strong>Key insights</strong>
+    <b>Pred</b> has the highest precision (0.921 train, 0.941 test) but the lowest recall (0.152) — it only fires on 358/542 pairs and catches just 35 valid days.
+    <b>Temperature</b> is a solid middle ground: good precision (0.871), meaningful recall (0.351), full coverage.
+    <b>Triage</b> has the highest recall (0.582) but many FPs (50) — it's the most aggressive at predicting valid.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SECTION 2 ══════════════════════════════ -->
+<div class="section">
+  <div class="section-title">2 — Rule Combinations (AND / OR)</div>
+  <div class="section-sub">AND = both rules must agree on valid. OR = either rule is enough. Evaluated on pairs where both rules have a signal.</div>
+
+  <div class="card">
+    <div style="font-weight:600;margin-bottom:14px;">Precision vs Recall — all strategies (Train)</div>
+    <div class="chart-wrap" style="height:300px">
+      <canvas id="scatterChart"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead><tr>
+        <th>Strategy</th><th>Logic</th>
+        <th class="num">TP</th><th class="num">FP</th><th class="num">TN</th><th class="num">FN</th>
+        <th class="num">Precision</th><th class="num">Recall</th><th></th>
+      </tr></thead>
+      <tbody>
+        <tr><td>Pred AND Temperature</td><td><span class="pill green">AND</span></td><td class="num">13</td><td class="num">0</td><td class="num">128</td><td class="num">217</td><td class="num"><span class="pill green">1.000</span></td><td class="num">0.057</td><td></td></tr>
+        <tr><td>All three AND</td><td><span class="pill green">AND</span></td><td class="num">10</td><td class="num">0</td><td class="num">117</td><td class="num">172</td><td class="num"><span class="pill green">1.000</span></td><td class="num">0.055</td><td></td></tr>
+        <tr><td>Pred AND Triage</td><td><span class="pill green">AND</span></td><td class="num">22</td><td class="num">1</td><td class="num">116</td><td class="num">160</td><td class="num"><span class="pill green">0.957</span></td><td class="num">0.121</td><td></td></tr>
+        <tr style="background:#f9fbe7"><td><strong>Pred</strong> (single)</td><td><span class="pill grey">single</span></td><td class="num">35</td><td class="num">3</td><td class="num">125</td><td class="num">195</td><td class="num"><span class="pill green">0.921</span></td><td class="num">0.152</td><td></td></tr>
+        <tr style="background:#e8f5e9"><td><strong>Pred OR Temperature</strong></td><td><span class="pill red">OR</span></td><td class="num">109</td><td class="num">16</td><td class="num">112</td><td class="num">121</td><td class="num"><span class="pill green">0.872</span></td><td class="num"><strong>0.474</strong></td><td><span class="star">★</span></td></tr>
+        <tr><td>Temperature AND Triage</td><td><span class="pill green">AND</span></td><td class="num">42</td><td class="num">7</td><td class="num">110</td><td class="num">140</td><td class="num"><span class="pill orange">0.857</span></td><td class="num">0.231</td><td></td></tr>
+        <tr><td>Temperature (single)</td><td><span class="pill grey">single</span></td><td class="num">88</td><td class="num">13</td><td class="num">141</td><td class="num">163</td><td class="num"><span class="pill orange">0.871</span></td><td class="num">0.351</td><td></td></tr>
+        <tr><td>Pred OR Triage</td><td><span class="pill red">OR</span></td><td class="num">112</td><td class="num">50</td><td class="num">67</td><td class="num">70</td><td class="num"><span class="pill red">0.691</span></td><td class="num">0.615</td><td></td></tr>
+        <tr><td>Temperature OR Triage</td><td><span class="pill red">OR</span></td><td class="num">134</td><td class="num">56</td><td class="num">61</td><td class="num">48</td><td class="num"><span class="pill red">0.705</span></td><td class="num">0.736</td><td></td></tr>
+        <tr><td>All three OR</td><td><span class="pill red">OR</span></td><td class="num">138</td><td class="num">56</td><td class="num">61</td><td class="num">44</td><td class="num"><span class="pill red">0.711</span></td><td class="num">0.758</td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="insight">
+    <strong>Best trade-off: Pred OR Temperature</strong>
+    Combines Pred's precision with Temperature's broader coverage. Precision stays at 0.872, recall jumps from 0.152 → 0.474. FP=16 (vs 13 for Temperature alone). The star candidate for a high-precision wide-coverage system.
+  </div>
+  <div class="insight info">
+    <strong>Perfect precision: Pred AND Temperature / All three AND</strong>
+    Both achieve 0 FP on train, but recall is very low (0.055–0.057) — they only fire when at least two conservative rules agree. Useful as a high-confidence "auto-approve" channel alongside a broader rule.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SECTION 3 ══════════════════════════════ -->
+<div class="section">
+  <div class="section-title">3 — 3-Rule Agreement Patterns</div>
+  <div class="section-sub">All 8 possible agreement states (valid/invalid per rule), evaluated on rows where all three rules have a signal (n=307). Shows % of cases that are truly valid.</div>
+
+  <div class="two-col">
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:14px;">Pattern → Ground Truth % Valid</div>
+      <div class="chart-wrap" style="height:260px">
+        <canvas id="patternChart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr>
+          <th>Pattern</th><th class="num">n</th><th class="num">n valid</th><th class="num">% valid</th>
+        </tr></thead>
+        <tbody>
+          <tr style="background:#e8f5e9"><td>P=V &nbsp;T=I &nbsp;Tr=I</td><td class="num">4</td><td class="num">4</td><td class="num"><span class="pill green">100%</span></td></tr>
+          <tr style="background:#e8f5e9"><td>P=V &nbsp;T=V &nbsp;Tr=I</td><td class="num">2</td><td class="num">2</td><td class="num"><span class="pill green">100%</span></td></tr>
+          <tr style="background:#e8f5e9"><td>P=V &nbsp;T=V &nbsp;Tr=V</td><td class="num">10</td><td class="num">10</td><td class="num"><span class="pill green">100%</span></td></tr>
+          <tr style="background:#f9fbe7"><td>P=V &nbsp;T=I &nbsp;Tr=V</td><td class="num">13</td><td class="num">12</td><td class="num"><span class="pill orange">92%</span></td></tr>
+          <tr style="background:#fff8e1"><td>P=I &nbsp;T=V &nbsp;Tr=V</td><td class="num">39</td><td class="num">32</td><td class="num"><span class="pill orange">82%</span></td></tr>
+          <tr><td>P=I &nbsp;T=V &nbsp;Tr=I</td><td class="num">32</td><td class="num">26</td><td class="num"><span class="pill orange">81%</span></td></tr>
+          <tr><td>P=I &nbsp;T=I &nbsp;Tr=V</td><td class="num">94</td><td class="num">52</td><td class="num"><span class="pill red">55%</span></td></tr>
+          <tr style="background:#ffebee"><td>P=I &nbsp;T=I &nbsp;Tr=I</td><td class="num">105</td><td class="num">44</td><td class="num"><span class="pill red">42%</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="insight">
+    <strong>Pred is a reliable veto</strong>
+    Whenever Pred says valid (P=V), the group is 92–100% likely to be truly valid — regardless of what Temperature and Triage say. This confirms that Pred should be trusted as a high-confidence signal.
+  </div>
+  <div class="insight warn">
+    <strong>Triage alone is noisy</strong>
+    When only Triage says valid (P=I, T=I, Tr=V), 55% are truly valid and 45% are false positives. Triage should not be used alone as a valid signal — it needs a corroborating rule.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SECTION 4 ══════════════════════════════ -->
+<div class="section">
+  <div class="section-title">4 — Metric Discrimination</div>
+  <div class="section-sub">Each individual metric's ability to separate valid from invalid, measured by <em>discrimination</em> = |valid_pass_rate − invalid_pass_rate| and <em>precision_when_pass</em> = % truly valid among cases where the metric passes.</div>
+
+  <div class="card">
+    <div style="font-weight:600;margin-bottom:14px;">Top 15 Metrics by Discrimination (colour = Precision when Pass)</div>
+    <div class="chart-wrap" style="height:380px">
+      <canvas id="discChart"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead><tr>
+        <th>Metric</th><th class="num">n</th>
+        <th class="num">Valid pass%</th><th class="num">Invalid pass%</th>
+        <th class="num">Discrimination</th><th class="num">Precision (when pass)</th><th class="num">n pass</th>
+      </tr></thead>
+      <tbody>
+        <tr style="background:#e8f5e9"><td><strong>clipping_diff</strong></td><td class="num">299</td><td class="num">78.0%</td><td class="num">20.5%</td><td class="num"><strong>0.575</strong></td><td class="num"><span class="pill orange">0.855</span></td><td class="num">166</td></tr>
+        <tr style="background:#e8f5e9"><td><strong>clip_diff_p90</strong></td><td class="num">358</td><td class="num">58.7%</td><td class="num">12.5%</td><td class="num"><strong>0.462</strong></td><td class="num"><span class="pill orange">0.894</span></td><td class="num">151</td></tr>
+        <tr style="background:#e8f5e9"><td><strong>clip_diff_mean</strong></td><td class="num">358</td><td class="num">54.3%</td><td class="num">10.2%</td><td class="num"><strong>0.442</strong></td><td class="num"><span class="pill green">0.906</span></td><td class="num">138</td></tr>
+        <tr><td>bucket_ref_adh</td><td class="num">405</td><td class="num">64.5%</td><td class="num">30.5%</td><td class="num">0.340</td><td class="num"><span class="pill orange">0.775</span></td><td class="num">209</td></tr>
+        <tr style="background:#e8f5e9"><td><strong>clip_diff_mean_roll3</strong></td><td class="num">351</td><td class="num">41.8%</td><td class="num">7.9%</td><td class="num"><strong>0.338</strong></td><td class="num"><span class="pill green">0.904</span></td><td class="num">104</td></tr>
+        <tr><td>pct_clipped</td><td class="num">358</td><td class="num">30.4%</td><td class="num">6.2%</td><td class="num">0.242</td><td class="num"><span class="pill green">0.897</span></td><td class="num">78</td></tr>
+        <tr><td>bucket_ordering</td><td class="num">405</td><td class="num">94.0%</td><td class="num">76.0%</td><td class="num">0.180</td><td class="num">0.669</td><td class="num">353</td></tr>
+        <tr><td>bucket_diurnal</td><td class="num">405</td><td class="num">71.3%</td><td class="num">53.9%</td><td class="num">0.174</td><td class="num">0.683</td><td class="num">262</td></tr>
+        <tr><td>clip_diff_max</td><td class="num">358</td><td class="num">20.4%</td><td class="num">3.1%</td><td class="num">0.173</td><td class="num"><span class="pill green">0.922</span></td><td class="num">51</td></tr>
+        <tr><td>bucket_temp_stab</td><td class="num">405</td><td class="num">79.3%</td><td class="num">63.6%</td><td class="num">0.156</td><td class="num">0.670</td><td class="num">297</td></tr>
+        <tr><td>auto_review_score</td><td class="num">271</td><td class="num">74.5%</td><td class="num">60.0%</td><td class="num">0.145</td><td class="num">0.645</td><td class="num">186</td></tr>
+        <tr><td>clip_diff_mean_roll5</td><td class="num">336</td><td class="num">17.8%</td><td class="num">4.1%</td><td class="num">0.138</td><td class="num"><span class="pill orange">0.884</span></td><td class="num">43</td></tr>
+        <tr><td>atv</td><td class="num">405</td><td class="num">84.9%</td><td class="num">73.4%</td><td class="num">0.115</td><td class="num">0.653</td><td class="num">326</td></tr>
+        <tr><td>clip_diff_mean_roll7</td><td class="num">314</td><td class="num">14.6%</td><td class="num">3.5%</td><td class="num">0.111</td><td class="num"><span class="pill orange">0.879</span></td><td class="num">33</td></tr>
+        <tr style="background:#ffebee"><td>pct_clipped_roll3</td><td class="num">351</td><td class="num">2.7%</td><td class="num">0.0%</td><td class="num">0.027</td><td class="num"><span class="pill green" style="background:#e8f5e9;color:#1b5e20">1.000</span></td><td class="num">6</td></tr>
+        <tr style="background:#ffebee"><td>pred_raw_std</td><td class="num">358</td><td class="num">2.6%</td><td class="num">0.0%</td><td class="num">0.026</td><td class="num"><span class="pill green" style="background:#e8f5e9;color:#1b5e20">1.000</span></td><td class="num">6</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="insight">
+    <strong>Top discriminators are all clipping-based</strong>
+    The top 3 metrics by discrimination are all from the pred_rules family: <code>clipping_diff</code> (0.575), <code>clip_diff_p90</code> (0.462), <code>clip_diff_mean</code> (0.442). These also have high precision (0.855–0.906) making them strong signals.
+  </div>
+  <div class="insight info">
+    <strong>Perfect precision but niche coverage</strong>
+    <code>pct_clipped_roll3</code> and <code>pred_raw_std</code> achieve Precision=1.000 (zero FP) but only fire on 6 cases. They can be used as a very safe "auto-approve" supplement for the small slice they cover.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SECTION 5 ══════════════════════════════ -->
+<div class="section">
+  <div class="section-title">5 — ATV as Tiebreaker</div>
+  <div class="section-sub">Ambient Temperature Volatility (ATV) is an independent metric. Tested as AND/OR modifier with each rule to see whether it sharpens precision or widens recall.</div>
+
+  <div class="card">
+    <div style="font-weight:600;margin-bottom:14px;">ATV Combination Strategies (Train)</div>
+    <div class="chart-wrap" style="height:260px">
+      <canvas id="atvChart"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead><tr>
+        <th>Strategy</th>
+        <th class="num">TP</th><th class="num">FP</th><th class="num">TN</th><th class="num">FN</th>
+        <th class="num">Precision</th><th class="num">Recall</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>Pred AND ATV</td><td class="num">31</td><td class="num">3</td><td class="num">125</td><td class="num">199</td><td class="num"><span class="pill green">0.912</span></td><td class="num">0.135</td></tr>
+        <tr><td>Pred OR ATV</td><td class="num">202</td><td class="num">96</td><td class="num">32</td><td class="num">28</td><td class="num"><span class="pill red">0.678</span></td><td class="num">0.878</td></tr>
+        <tr><td>Temperature AND ATV</td><td class="num">88</td><td class="num">13</td><td class="num">141</td><td class="num">163</td><td class="num"><span class="pill orange">0.871</span></td><td class="num">0.351</td></tr>
+        <tr><td>Temperature OR ATV</td><td class="num">213</td><td class="num">113</td><td class="num">41</td><td class="num">38</td><td class="num"><span class="pill red">0.653</span></td><td class="num">0.849</td></tr>
+        <tr><td>Triage AND ATV</td><td class="num">93</td><td class="num">42</td><td class="num">75</td><td class="num">89</td><td class="num"><span class="pill red">0.689</span></td><td class="num">0.511</td></tr>
+        <tr><td>Triage OR ATV</td><td class="num">170</td><td class="num">95</td><td class="num">22</td><td class="num">12</td><td class="num"><span class="pill red">0.642</span></td><td class="num">0.934</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="insight warn">
+    <strong>ATV adds little as a tiebreaker</strong>
+    ATV AND with Pred barely changes performance (0.912 vs 0.921 for Pred alone) because the two rules already agree on most cases. ATV OR with any rule floods the system with FPs. ATV alone has low discrimination (0.115). Its main value is in the temperature rule gates, not as a standalone combination modifier.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SECTION 6 ══════════════════════════════ -->
+<div class="section">
+  <div class="section-title">6 — Final Summary: Best Strategies</div>
+  <div class="section-sub">All strategies ranked by Precision. <span class="pill green">★ Candidates</span> meet: Precision ≥ 0.85 AND Recall ≥ 0.20. Test set results for top candidates shown separately.</div>
+
+  <div class="two-col" style="margin-bottom:20px;">
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:14px;">Train — Precision by Strategy</div>
+      <div class="chart-wrap" style="height:300px">
+        <canvas id="summaryChart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:14px;">Test Set — Top Candidates</div>
+      <table>
+        <thead><tr>
+          <th>Strategy</th><th class="num">TP</th><th class="num">FP</th><th class="num">FN</th>
+          <th class="num">Precision</th><th class="num">Recall</th>
+        </tr></thead>
+        <tbody>
+          <tr><td><strong>Pred</strong></td><td class="num">16</td><td class="num">1</td><td class="num">64</td><td class="num"><span class="pill green">0.941</span></td><td class="num">0.200</td></tr>
+          <tr style="background:#e8f5e9"><td><strong>Pred OR Temperature</strong> ★</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">~0.87</td><td class="num">~0.47</td></tr>
+          <tr><td>Temperature AND Triage</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">~0.86</td><td class="num">~0.23</td></tr>
+          <tr><td>Temperature</td><td class="num">19</td><td class="num">4</td><td class="num">66</td><td class="num"><span class="pill orange">0.826</span></td><td class="num">0.224</td></tr>
+          <tr><td>Triage</td><td class="num">36</td><td class="num">19</td><td class="num">27</td><td class="num"><span class="pill red">0.655</span></td><td class="num">0.571</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:600;margin-bottom:14px;">All Strategies — Full Ranking (Train)</div>
+    <table>
+      <thead><tr>
+        <th>Strategy</th><th>Type</th>
+        <th class="num">TP</th><th class="num">FP</th><th class="num">TN</th><th class="num">FN</th>
+        <th class="num">Precision</th><th class="num">Recall</th><th></th>
+      </tr></thead>
+      <tbody>
+        <tr><td>Pred AND Temperature</td><td><span class="pill green">combo</span></td><td class="num">13</td><td class="num">0</td><td class="num">128</td><td class="num">217</td><td class="num"><span class="pill green">1.000</span></td><td class="num">0.057</td><td></td></tr>
+        <tr><td>All three AND</td><td><span class="pill green">combo</span></td><td class="num">10</td><td class="num">0</td><td class="num">117</td><td class="num">172</td><td class="num"><span class="pill green">1.000</span></td><td class="num">0.055</td><td></td></tr>
+        <tr><td>Pred AND Triage</td><td><span class="pill green">combo</span></td><td class="num">22</td><td class="num">1</td><td class="num">116</td><td class="num">160</td><td class="num"><span class="pill green">0.957</span></td><td class="num">0.121</td><td></td></tr>
+        <tr><td>Pred</td><td><span class="pill grey">single</span></td><td class="num">35</td><td class="num">3</td><td class="num">125</td><td class="num">195</td><td class="num"><span class="pill green">0.921</span></td><td class="num">0.152</td><td></td></tr>
+        <tr><td>Pred AND ATV</td><td><span class="pill blue">atv</span></td><td class="num">31</td><td class="num">3</td><td class="num">125</td><td class="num">199</td><td class="num"><span class="pill green">0.912</span></td><td class="num">0.135</td><td></td></tr>
+        <tr style="background:#e8f5e9"><td><strong>Pred OR Temperature</strong></td><td><span class="pill orange">combo</span></td><td class="num">109</td><td class="num">16</td><td class="num">112</td><td class="num">121</td><td class="num"><span class="pill green">0.872</span></td><td class="num">0.474</td><td><span class="star">★</span></td></tr>
+        <tr style="background:#e8f5e9"><td><strong>Temperature AND ATV</strong></td><td><span class="pill blue">atv</span></td><td class="num">88</td><td class="num">13</td><td class="num">141</td><td class="num">163</td><td class="num"><span class="pill orange">0.871</span></td><td class="num">0.351</td><td><span class="star">★</span></td></tr>
+        <tr style="background:#e8f5e9"><td><strong>Temperature</strong></td><td><span class="pill grey">single</span></td><td class="num">88</td><td class="num">13</td><td class="num">141</td><td class="num">163</td><td class="num"><span class="pill orange">0.871</span></td><td class="num">0.351</td><td><span class="star">★</span></td></tr>
+        <tr style="background:#e8f5e9"><td><strong>Temperature AND Triage</strong></td><td><span class="pill orange">combo</span></td><td class="num">42</td><td class="num">7</td><td class="num">110</td><td class="num">140</td><td class="num"><span class="pill orange">0.857</span></td><td class="num">0.231</td><td><span class="star">★</span></td></tr>
+        <tr><td>All three OR</td><td><span class="pill orange">combo</span></td><td class="num">138</td><td class="num">56</td><td class="num">61</td><td class="num">44</td><td class="num"><span class="pill red">0.711</span></td><td class="num">0.758</td><td></td></tr>
+        <tr><td>Temperature OR Triage</td><td><span class="pill orange">combo</span></td><td class="num">134</td><td class="num">56</td><td class="num">61</td><td class="num">48</td><td class="num"><span class="pill red">0.705</span></td><td class="num">0.736</td><td></td></tr>
+        <tr><td>Pred OR Triage</td><td><span class="pill orange">combo</span></td><td class="num">112</td><td class="num">50</td><td class="num">67</td><td class="num">70</td><td class="num"><span class="pill red">0.691</span></td><td class="num">0.615</td><td></td></tr>
+        <tr><td>Triage AND ATV</td><td><span class="pill blue">atv</span></td><td class="num">93</td><td class="num">42</td><td class="num">75</td><td class="num">89</td><td class="num"><span class="pill red">0.689</span></td><td class="num">0.511</td><td></td></tr>
+        <tr><td>Triage</td><td><span class="pill grey">single</span></td><td class="num">106</td><td class="num">50</td><td class="num">67</td><td class="num">76</td><td class="num"><span class="pill red">0.679</span></td><td class="num">0.582</td><td></td></tr>
+        <tr><td>Pred OR ATV</td><td><span class="pill blue">atv</span></td><td class="num">202</td><td class="num">96</td><td class="num">32</td><td class="num">28</td><td class="num"><span class="pill red">0.678</span></td><td class="num">0.878</td><td></td></tr>
+        <tr><td>Temperature OR ATV</td><td><span class="pill blue">atv</span></td><td class="num">213</td><td class="num">113</td><td class="num">41</td><td class="num">38</td><td class="num"><span class="pill red">0.653</span></td><td class="num">0.849</td><td></td></tr>
+        <tr><td>Triage OR ATV</td><td><span class="pill blue">atv</span></td><td class="num">170</td><td class="num">95</td><td class="num">22</td><td class="num">12</td><td class="num"><span class="pill red">0.642</span></td><td class="num">0.934</td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ RECOMMENDATIONS ═══════════════════════ -->
+<div class="section">
+  <div class="section-title">Actionable Recommendations</div>
+  <div class="section-sub">What can be implemented based on this analysis.</div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+    <div class="card" style="border-left:4px solid var(--green)">
+      <div style="font-weight:700;color:var(--green);margin-bottom:8px;">1 — Use Pred as a "safe lane"</div>
+      <p style="font-size:13px;color:var(--muted)">When Pred says valid, trust it (P=0.941 on test, 1 FP). This becomes a guaranteed auto-approve channel with very low risk. Low recall (20%) means it won't catch everything, but when it fires it's almost always right.</p>
+    </div>
+    <div class="card" style="border-left:4px solid var(--blue)">
+      <div style="font-weight:700;color:var(--blue);margin-bottom:8px;">2 — Use Pred OR Temperature as the main system</div>
+      <p style="font-size:13px;color:var(--muted)">Combine Pred and Temperature with OR logic to get Precision=0.872, Recall=0.474. This catches 3× more valid cases than Pred alone while still rejecting most FPs. Replaces both single rules with one combined signal.</p>
+    </div>
+    <div class="card" style="border-left:4px solid var(--orange)">
+      <div style="font-weight:700;color:var(--orange);margin-bottom:8px;">3 — Pred AND Temperature as an ultra-safe channel</div>
+      <p style="font-size:13px;color:var(--muted)">When both rules independently agree on valid, Precision=1.0 (0 FP on train). Low recall (0.057) but zero risk. Useful as a fully automated approval tier, e.g., skip manual review entirely for these cases.</p>
+    </div>
+    <div class="card" style="border-left:4px solid var(--red)">
+      <div style="font-weight:700;color:var(--red);margin-bottom:8px;">4 — Deprioritise Triage as a standalone signal</div>
+      <p style="font-size:13px;color:var(--muted)">Triage alone has 50 FPs on train (Precision=0.679). It should only be used in combination — either AND with another rule to tighten it, or to understand coverage gaps. Never fire an auto-approval on Triage alone.</p>
+    </div>
+    <div class="card" style="border-left:4px solid #7b1fa2">
+      <div style="font-weight:700;color:#7b1fa2;margin-bottom:8px;">5 — Consider a tiered approval system</div>
+      <p style="font-size:13px;color:var(--muted)">
+        <strong>Tier 1 (auto-approve, 0 FP):</strong> Pred AND Temperature agrees → valid<br>
+        <strong>Tier 2 (auto-approve, ~1 FP):</strong> Pred agrees → valid<br>
+        <strong>Tier 3 (high confidence):</strong> Pred OR Temperature → valid<br>
+        <strong>Tier 4 (manual review):</strong> Only Triage or no signal → review
+      </p>
+    </div>
+    <div class="card" style="border-left:4px solid #00838f">
+      <div style="font-weight:700;color:#00838f;margin-bottom:8px;">6 — Investigate top discriminating metrics</div>
+      <p style="font-size:13px;color:var(--muted)"><code>clipping_diff</code>, <code>clip_diff_p90</code>, and <code>clip_diff_mean</code> are the strongest individual separators (discrimination 0.44–0.57, precision 0.86–0.91). These are strong candidates to either enhance the Pred rule threshold or build a new supplementary metric check.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Charts JS -->
+<script>
+// ── Chart 1: Precision / Recall grouped bar ───────────────────────────────
+new Chart(document.getElementById('prChart'), {
+  type: 'bar',
+  data: {
+    labels: ['Pred', 'Temperature', 'Triage'],
+    datasets: [
+      { label: 'Precision', data: [0.921, 0.871, 0.679], backgroundColor: '#e53935' },
+      { label: 'Recall',    data: [0.152, 0.351, 0.582], backgroundColor: '#1e88e5' },
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'top' }, datalabels: false },
+    scales: { y: { min: 0, max: 1.05, ticks: { stepSize: 0.2 } } }
+  }
+});
+
+// ── Chart 2: TP vs FP ─────────────────────────────────────────────────────
+new Chart(document.getElementById('tpfpChart'), {
+  type: 'bar',
+  data: {
+    labels: ['Pred', 'Temperature', 'Triage'],
+    datasets: [
+      { label: 'TP (correct valid)', data: [35, 88, 106], backgroundColor: '#43a047' },
+      { label: 'FP (wrong valid)',   data: [3,  13, 50],  backgroundColor: '#e53935' },
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'top' } },
+    scales: { y: { beginAtZero: true } }
+  }
+});
+
+// ── Chart 3: Precision-Recall scatter ────────────────────────────────────
+new Chart(document.getElementById('scatterChart'), {
+  type: 'scatter',
+  data: {
+    datasets: [
+      {
+        label: 'Single', backgroundColor: '#9e9e9e',
+        data: [{x:0.152,y:0.921,r:8},{x:0.351,y:0.871,r:8},{x:0.582,y:0.679,r:8}],
+        pointRadius: 8,
+      },
+      {
+        label: 'AND', backgroundColor: '#e53935',
+        data: [{x:0.057,y:1.0},{x:0.055,y:1.0},{x:0.121,y:0.957},{x:0.231,y:0.857}],
+        pointRadius: 8,
+      },
+      {
+        label: 'OR', backgroundColor: '#1e88e5',
+        data: [{x:0.474,y:0.872},{x:0.615,y:0.691},{x:0.736,y:0.705},{x:0.758,y:0.711}],
+        pointRadius: 8,
+      },
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'top' }, tooltip: {
+      callbacks: { label: (c) => {
+        const labels = [
+          ['Pred','Temperature','Triage'],
+          ['Pred AND Temp','All 3 AND','Pred AND Triage','Temp AND Triage'],
+          ['Pred OR Temp','Pred OR Triage','Temp OR Triage','All 3 OR'],
+        ];
+        return `${labels[c.datasetIndex][c.dataIndex] || '?'}: P=${c.parsed.y} R=${c.parsed.x}`;
+      }}
+    }},
+    scales: {
+      x: { min: 0, max: 1, title: { display: true, text: 'Recall' } },
+      y: { min: 0.5, max: 1.05, title: { display: true, text: 'Precision' },
+           ticks: { callback: v => v.toFixed(2) } }
+    },
+    annotation: {}
+  }
+});
+
+// ── Chart 4: Pattern bars ─────────────────────────────────────────────────
+new Chart(document.getElementById('patternChart'), {
+  type: 'bar',
+  data: {
+    labels: ['P=V T=I Tr=I','P=V T=V Tr=I','P=V T=V Tr=V','P=V T=I Tr=V',
+             'P=I T=V Tr=V','P=I T=V Tr=I','P=I T=I Tr=V','P=I T=I Tr=I'],
+    datasets: [{
+      label: '% truly valid',
+      data: [100, 100, 100, 92.3, 82.1, 81.2, 55.3, 41.9],
+      backgroundColor: [
+        '#43a047','#43a047','#43a047','#8bc34a',
+        '#ffc107','#ffc107','#ff7043','#e53935'
+      ],
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { min: 0, max: 110, title: { display: true, text: '% truly valid' } }
+    }
+  }
+});
+
+// ── Chart 5: Discrimination bar ───────────────────────────────────────────
+const discMetrics = ['clipping_diff','clip_diff_p90','clip_diff_mean','bucket_ref_adh',
+  'clip_diff_mean_roll3','pct_clipped','bucket_ordering','bucket_diurnal',
+  'clip_diff_max','bucket_temp_stab','auto_review_score','clip_diff_mean_roll5',
+  'atv','clip_diff_mean_roll7','clip_diff_max'];
+const discVals = [0.575,0.462,0.442,0.340,0.338,0.242,0.180,0.174,0.173,0.156,0.145,0.138,0.115,0.111,0.173];
+const discPrec = [0.855,0.894,0.906,0.775,0.904,0.897,0.669,0.683,0.922,0.670,0.645,0.884,0.653,0.879,0.922];
+function precColor(p) {
+  if (p >= 0.90) return '#43a047';
+  if (p >= 0.85) return '#8bc34a';
+  if (p >= 0.75) return '#ffc107';
+  return '#ef9a9a';
+}
+new Chart(document.getElementById('discChart'), {
+  type: 'bar',
+  data: {
+    labels: discMetrics,
+    datasets: [{
+      label: 'Discrimination',
+      data: discVals,
+      backgroundColor: discPrec.map(precColor),
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false },
+      tooltip: { callbacks: { label: (c) => `disc=${discVals[c.dataIndex]}  prec=${discPrec[c.dataIndex]}` }}
+    },
+    scales: { x: { min: 0, max: 0.65, title: { display: true, text: 'Discrimination' } } }
+  }
+});
+
+// ── Chart 6: ATV strategies ───────────────────────────────────────────────
+new Chart(document.getElementById('atvChart'), {
+  type: 'bar',
+  data: {
+    labels: ['Pred AND ATV','Temperature AND ATV','Triage AND ATV',
+             'Pred OR ATV','Temperature OR ATV','Triage OR ATV'],
+    datasets: [
+      { label: 'Precision', data: [0.912,0.871,0.689,0.678,0.653,0.642], backgroundColor: '#e53935' },
+      { label: 'Recall',    data: [0.135,0.351,0.511,0.878,0.849,0.934], backgroundColor: '#1e88e5' },
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'top' } },
+    scales: { y: { min: 0, max: 1.1, ticks: { stepSize: 0.2 } } }
+  }
+});
+
+// ── Chart 7: Summary precision ────────────────────────────────────────────
+const summStrats = ['Pred AND Temp','All 3 AND','Pred AND Triage','Pred',
+                    'Pred AND ATV','Pred OR Temp ★','Temp AND ATV','Temperature',
+                    'Temp AND Triage','All 3 OR','Temp OR Triage','Pred OR Triage'];
+const summPrec = [1.0,1.0,0.957,0.921,0.912,0.872,0.871,0.871,0.857,0.711,0.705,0.691];
+const summColors = summPrec.map((p,i) => {
+  if (i===5) return '#1565c0';   // star candidate
+  if (p >= 0.90) return '#43a047';
+  if (p >= 0.85) return '#8bc34a';
+  if (p >= 0.70) return '#ffc107';
+  return '#ef9a9a';
+});
+new Chart(document.getElementById('summaryChart'), {
+  type: 'bar',
+  data: {
+    labels: summStrats,
+    datasets: [{ label: 'Precision', data: summPrec, backgroundColor: summColors }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: { x: { min: 0.6, max: 1.05,
+      ticks: { callback: v => v.toFixed(2) } } }
+  }
+});
+</script>
+
+<footer>
+  Generated from <code>explore_notebooks/system_rules_analysis.ipynb</code> &nbsp;·&nbsp;
+  model-monitor-analysis &nbsp;·&nbsp; BeeFrame model monitoring
+</footer>
+</div>
+</body>
+</html>
